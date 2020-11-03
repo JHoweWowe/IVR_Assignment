@@ -13,6 +13,8 @@ from cv_bridge import CvBridge, CvBridgeError
 
 class image_converter:
 
+  # This comment is an initial test
+
   # Defines publisher and subscriber
   def __init__(self):
     # initialize the node named image_processing
