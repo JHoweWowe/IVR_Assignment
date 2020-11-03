@@ -13,7 +13,7 @@ from cv_bridge import CvBridge, CvBridgeError
 
 class image_converter:
 
-  # This comment is an initial test
+  # Isolate colors within image
 
   # Defines publisher and subscriber
   def __init__(self):
