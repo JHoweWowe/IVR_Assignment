@@ -21,16 +21,22 @@ class image_converter:
     self.image_pub1 = rospy.Publisher("image_topic1",Image, queue_size = 1)
 
     # NEW: Initalize a publisher to send joints' angular position to a topic called joints_pos
-    self.joints_pub = rospy.Publisher("joints_pos",Float64MultiArray, queue_size=10)
+    self.my_joints_pub = rospy.Publisher("my_joints_pos",Float64MultiArray, queue_size=10)
     
     # initialize a subscriber to recieve messages rom a topic named /robot/camera1/image_raw and use callback function to recieve data
     self.image_sub1 = rospy.Subscriber("/camera1/robot/image_raw",Image,self.callback1)
     # initialize the bridge between openCV and ROS
     self.bridge = CvBridge()
+
+    # Move (publish) the following joints with sinusoidal signals, as requested in coursework document
+    self.joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command",Float64,queue_size=10)
+    self.joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command",Float64,queue_size=10)
+    self.joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command",Float64,queue_size=10)
   
     # Isolate the 4 blobs to help obtain 3 joints using color detection
     # TODO: #1- Make the blob detection algorithm more accurate- lessen iterations for dilation or remove dilation
     # TODO: #2- Momements may not be correctly shown (what happens if int(M['m00'] == 0??)- which affect the joint angle detection
+
   def detect_red(self, image):
     # Isolate red color- threshold slightly differs!!!
     red_mask = cv2.inRange(image, (0,0,100), (35,35,255))
@@ -55,8 +61,8 @@ class image_converter:
     #cv2.waitKey(1)
 
     # Test function to show image window of mask
-    im1 = cv2.imshow('red_mask_window', red_mask)
-    cv2.waitKey(1)
+    #im1 = cv2.imshow('red_mask_window', red_mask)
+    #cv2.waitKey(1)
 
     return np.array([cx,cy])
 
@@ -78,17 +84,14 @@ class image_converter:
       cx = self.detect_yellow(image)[0]
       cy = self.detect_yellow(image)[1]
 
-    print("Centroid of blue blob")
-    print(np.array([cx,cy]))
-
     # Test function to show centroid
-    cv2.circle(image, (cx,cy), 3, (255,255,255), -1)
-    cv2.imshow('momentsWindow', image)
-    cv2.waitKey(1)
+    #cv2.circle(image, (cx,cy), 3, (255,255,255), -1)
+    #cv2.imshow('momentsWindow', image)
+    #cv2.waitKey(1)
 
     # Test function to show image window of mask
-    im1 = cv2.imshow('blue_mask_window', blue_mask)
-    cv2.waitKey(1)
+    #im1 = cv2.imshow('blue_mask_window', blue_mask)
+    #cv2.waitKey(1)
 
     return np.array([cx,cy])
   
@@ -110,16 +113,14 @@ class image_converter:
       cx = self.detect_blue(image)[0]
       cy = self.detect_blue(image)[1]
 
-    print(np.array([cx,cy]))
-
     # Test function to show centroid
-    cv2.circle(image, (cx,cy), 3, (255,255,255), -1)
-    cv2.imshow('momentsWindow', image)
-    cv2.waitKey(1)
+    #cv2.circle(image, (cx,cy), 3, (255,255,255), -1)
+    #cv2.imshow('momentsWindow', image)
+    #cv2.waitKey(1)
 
     # Test function to show image window of mask
-    im1 = cv2.imshow('green_mask_window', green_mask)
-    cv2.waitKey(1)
+    #im1 = cv2.imshow('green_mask_window', green_mask)
+    #cv2.waitKey(1)
 
     return np.array([cx,cy])
 
@@ -145,15 +146,39 @@ class image_converter:
     #print(np.array([cx,cy]))
 
     # Test function to show centroid
-    cv2.circle(image, (cx,cy), 3, (255,255,255), -1)
-    cv2.imshow('momentsWindow', image)
-    cv2.waitKey(1)
+    #cv2.circle(image, (cx,cy), 3, (255,255,255), -1)
+    #cv2.imshow('momentsWindow', image)
+    #cv2.waitKey(1)
 
     # Test function to show image window of mask
-    im1 = cv2.imshow('yellow_mask_window', yellow_mask)
-    cv2.waitKey(1)
+    #im1 = cv2.imshow('yellow_mask_window', yellow_mask)
+    #cv2.waitKey(1)
 
     return np.array([cx,cy])
+
+  # Section 2.2 of assignment:
+  def detect_orange_target(self, image):
+    # Obtain image for 2 moving objects - sphere and box
+    orange_mask = cv2.inRange(image, (0,45,100), (15,90,150))
+    
+    # Apply Canny Edge Detection
+    edged = cv2.Canny(orange_mask, 35, 195)
+    contours, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+    maxArea = 0
+    for contour in contours:
+      if (cv2.contourArea(contour) > maxArea):
+        maxArea = cv2.contourArea(contour)
+        sphere = contour
+
+    M = cv2.moments(sphere)
+    cx = int(M['m10']/M['m00'])
+    cy = int(M['m01']/M['m00'])
+
+    # TODO: Find distance from sphere to the base (yellow sphere)
+
+    return np.array([cx,cy])
+
 
   def pixel2MeterForLink1(self, image):
     joint1 = self.detect_yellow(image)
@@ -182,22 +207,13 @@ class image_converter:
 
   def detect_joint_angle1(self, image):
     a = self.pixel2MeterForLink1(image)
-    print("Pixels to Meter")
-    print(a)
     # Obtain center of each coloured blob in meters
     center = a * self.detect_yellow(image)
     circle1Pos = a * self.detect_blue(image)
-    print("Yellow blob")
-    print(center)
-    print("Blue blob")
-    print(circle1Pos)
-
-    print("Help")
-    print(center[1]-circle1Pos[1])
     # Solve using trignometry
     ja1 = np.arctan2(center[0]-circle1Pos[0], center[1]-circle1Pos[1])
-    print("Joint Angle")
-    print(ja1)
+    #print("Joint Angle")
+    #print(ja1)
     return ja1
 
   # Joint_angle 2 should ALWAYS be 0 NO???
@@ -255,25 +271,44 @@ class image_converter:
     cv2.waitKey(1)
 
     a = self.detect_all_joint_angles(self.cv_image1)
-    #a = self.detect_joint_angle1(self.cv_image1)
 
     # Test call image detection functions for showing masks respectively
     #self.detect_red(self.cv_image1)
     #self.detect_blue(self.cv_image1)
     #self.detect_green(self.cv_image1)
     #self.detect_yellow(self.cv_image1)
+    self.detect_orange_target(self.cv_image1)
 
     # Obtain joints data when finished
-    self.joints = Float64MultiArray()
+    self.my_joints = Float64MultiArray()
     #self.joints.data = np.array([0,0,0])
-    self.joints.data = a
+    self.my_joints.data = a
 
-    # TODO: Convert image to HSV format for clearer object detection and then publish it for joints
+    # ACTUAL VALUES
+    # Set movement of joint values according to sinusoidal signals
+    # and publish the movement values
+    joint2Value = Float64()
+    joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
+    self.joint2_pub.publish(joint2Value)
+    joint3Value = Float64()
+    joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
+    self.joint3_pub.publish(joint3Value)
+    joint4Value = Float64()
+    joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
+    self.joint4_pub.publish(joint4Value)
+    
+    # MY VALUES
+    
+    # Differences between actual values and my values
+    print("Differences:")
+    print(abs(joint3Value.data - a[2]))
+    print(abs(joint4Value.data - a[3]))
+
 
     # Publish the results
     try: 
       self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
-      self.joints_pub.publish(self.joints)
+      self.my_joints_pub.publish(self.my_joints)
     except CvBridgeError as e:
       print(e)
 
