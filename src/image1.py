@@ -76,17 +76,25 @@ class image_converter:
     # Calculate pixel coordinates for blob center
     if (M_image2['m00'] != 0):
       cx = int(M_image2['m10']/M_image2['m00'])
+      cz = int(M_image2['m01']/M_image2['m00'])
     else:
       cx = self.detect_yellow(image1,image2)[0]
+      cz = self.detect_yellow(image1,image2)[2]
 
     #print("Dimensions for blue blob:")
     #print(np.array([cx,cy,cz]))
+
+    #cv2.circle(image2, (cx,cz), 3, (255,255,255), -1)
 
     return np.array([cx,cy,cz])
   
   def detect_green(self, image1, image2):
     # Isolate green color- threshold slightly differs!
-    green_mask_image1 = cv2.inRange(image1, (0,100,0), (25,255,25))
+    green_mask_image1 = cv2.inRange(image1, (0,100,0), (40,255,40))
+    # Kernel convolution created to dilate green_mask
+    kernel = np.ones((5,5), np.uint8)
+    #green_mask_image1 = cv2.dilate(green_mask_image1,
+
     # Obtain moments of binary image
     M_image1 = cv2.moments(green_mask_image1)
     # Calculate pixel coordinates for blob center
@@ -97,15 +105,24 @@ class image_converter:
       cy = self.detect_blue(image1,image2)[1]
       cz = self.detect_blue(image1,image2)[2]
 
-    green_mask_image2 = cv2.inRange(image2, (0,100,0), (25,255,25))
-    M_image2 = cv2.moments(green_mask_image2)
+    green_mask_image2 = cv2.inRange(image2, (0,100,0), (40,255,40))
+
+    # Currently problem with detecting moments centroid at green blob detection at camera 2
+    contours, hierarchy = cv2.findContours(green_mask_image2, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    M_image2 = cv2.moments(contours[0])
     if (M_image2['m00'] != 0):
       cx = int(M_image2['m10']/M_image2['m00'])
+      cz = int(M_image2['m01']/M_image2['m00'])
     else:
       cx = self.detect_blue(image1,image2)[0]
+      cz = self.detect_blue(image1,image2)[2]
 
     #print("Dimensions for green blob:")
     #print(np.array([cx,cy,cz]))
+
+    im1 = cv2.imshow('image2_green',green_mask_image2)
+    cv2.circle(image2, (cx,cz), 2, (255,255,255), -1)
 
     return np.array([cx,cy,cz])
 
@@ -154,12 +171,29 @@ class image_converter:
     joint3 = a * self.detect_green(image1, image2)
 
     directionVector = joint3 - joint2
-    unitDirectionVector = directionVector / np.linalg.norm(directionVector)
+    uDVector = directionVector / np.linalg.norm(directionVector)
     print("Unit Direction Vector")
-    print(unitDirectionVector)
+    print(uDVector)
 
-    angleX = np.arcsin((-1) * unitDirectionVector[1])
-    return angleX
+    #testAngle = np.arcsin((-1) * unitDirectionVector[1])
+
+    uDVectorZAxis = np.array([0,0,-1])
+
+    #myTestAngle = np.arccos((uDVectorZAxis[0] * uDVector[0] + uDVectorZAxis[1] * uDVector[1] + uDVectorZAxis[2] * uDVector[2]) / (np.sqrt(uDVectorZAxis[0]**2 + uDVectorZAxis[1]**2 + uDVectorZAxis[2]**2) * np.sqrt(uDVector[0]**2 + uDVector[1]**2 + uDVector[2]**2)))
+
+    # Obtain X angle for YZ plane- must consider positive and negative theta
+    x_angle = np.arccos(uDVectorZAxis[1] * uDVector[1] + uDVectorZAxis[2] * uDVector[2])
+    
+    # If angle X rotates anti-clockwise (positive theta value)
+    if (uDVector[1] <= 0):
+      rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),(-1)*np.sin(x_angle)],[0,np.sin(x_angle),np.cos(x_angle)]])
+      final_x_angle = np.arctan2(rotationMatrix_X[2][1],rotationMatrix_X[2][2])
+    # If angle X rotates clockwise (negative theta value)
+    elif (uDVector[1] > 0):
+      rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),np.sin(x_angle)],[0,(-1)*np.sin(x_angle),np.cos(x_angle)]])
+      final_x_angle = np.arctan2(rotationMatrix_X[2][1],rotationMatrix_X[2][2])
+
+    return final_x_angle
 
   # Joint angle 3
   def detect_joint_angle3(self, image1, image2):
@@ -169,13 +203,24 @@ class image_converter:
     joint3 = a * self.detect_green(image1, image2)
 
     directionVector = joint3 - joint2
-    unitDirectionVector = directionVector / np.linalg.norm(directionVector)
-    print("Unit Direction Vector")
-    print(unitDirectionVector)
+    uDVector = directionVector / np.linalg.norm(directionVector)
+    print("Unit Direction Vector for Y")
+    print(uDVector)
 
-    angleY = (-1) * np.arcsin(-unitDirectionVector[0] / np.sqrt(1-(unitDirectionVector[1]**2)))
+    #angleY = (-1) * np.arcsin(-unitDirectionVector[0] / np.sqrt(1-(unitDirectionVector[1]**2)))
 
-    return angleY
+    uDVectorZAxis = np.array([0,0,-1])
+
+    # Obtain Y angle for XZ plane- must consider positive and negative theta
+    y_angle = np.arccos(uDVectorZAxis[0] * uDVector[0] + uDVectorZAxis[2] * uDVector[2])
+    if (uDVector[0] >= 0):
+      rotation_matrix_Y = np.array([[np.cos(y_angle),0,np.sin(y_angle)],[0,1,0],[(-1)*np.sin(y_angle),0,np.cos(y_angle)]])
+    elif (uDVector[0] < 0):
+      rotation_matrix_Y = np.array([[np.cos(y_angle),0,(-1)*np.sin(y_angle)],[0,1,0],[np.sin(y_angle),0,np.cos(y_angle)]])
+    
+    final_y_angle = np.arctan2((-1)*rotation_matrix_Y[2][0],np.sqrt(rotation_matrix_Y[2][1]**2+rotation_matrix_Y[2][2]**2))
+
+    return final_y_angle
 
   # Joint_angle 4 from camera 1 and 2
   def detect_joint_angle4(self, image1, image2):
@@ -223,13 +268,14 @@ class image_converter:
     # and publish the movement values
     # Note: Joint 2 movement detection on its own works
     
-    joint2Value = Float64()
-    joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    joint2Value.data = np.pi/4
-    self.joint2_pub.publish(joint2Value)
+    #joint2Value = Float64()
+    #joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
+    #joint2Value.data = -(np.pi/4)
+    #self.joint2_pub.publish(joint2Value)
 
     joint3Value = Float64()
     joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
+    #joint3Value.data = (np.pi/2)
     self.joint3_pub.publish(joint3Value)
 
     #joint4Value = Float64()
@@ -238,20 +284,20 @@ class image_converter:
       
     # MY ESTIMATED VALUES
     # TO BE COMPLETED
-    joint2EstimatedValue = Float64()
-    joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
-    self.joint2_estimate_pub.publish(joint2EstimatedValue)
+    #joint2EstimatedValue = Float64()
+    #joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
+    #self.joint2_estimate_pub.publish(joint2EstimatedValue)
 
     joint3EstimatedValue = Float64()
-    joint3EstimatedValue = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
+    joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
     self.joint3_estimate_pub.publish(joint3EstimatedValue)
     
     # Differences between actual values and my values
-    print("Differences between Joint2 actual and estimated joint angle values:")
-    print(abs(joint2Value.data - joint2EstimatedValue.data))
+    #print("Differences between Joint2 actual and estimated joint angle values:")
+    #print(abs(joint2Value.data - joint2EstimatedValue.data))
 
-    #print("Differences between Joint3 actual and estimated joint angle values:")
-    #print(abs(joint3Value.data - joint3EstimatedValue.data))
+    print("Differences between Joint3 actual and estimated joint angle values:")
+    print(abs(joint3Value.data - joint3EstimatedValue.data))
 
     # Display images
     im1=cv2.imshow('window1', self.cv_image1)
