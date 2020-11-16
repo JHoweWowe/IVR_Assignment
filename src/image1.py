@@ -84,16 +84,14 @@ class image_converter:
     #print("Dimensions for blue blob:")
     #print(np.array([cx,cy,cz]))
 
-    #cv2.circle(image2, (cx,cz), 3, (255,255,255), -1)
+    cv2.circle(image1,(cy,cz), 3, (255,255,255), -1)
+    cv2.circle(image2, (cx,cz), 3, (255,255,255), -1)
 
     return np.array([cx,cy,cz])
   
   def detect_green(self, image1, image2):
     # Isolate green color- threshold slightly differs!
     green_mask_image1 = cv2.inRange(image1, (0,100,0), (40,255,40))
-    # Kernel convolution created to dilate green_mask
-    kernel = np.ones((5,5), np.uint8)
-    #green_mask_image1 = cv2.dilate(green_mask_image1,
 
     # Obtain moments of binary image
     M_image1 = cv2.moments(green_mask_image1)
@@ -121,7 +119,8 @@ class image_converter:
     #print("Dimensions for green blob:")
     #print(np.array([cx,cy,cz]))
 
-    im1 = cv2.imshow('image2_green',green_mask_image2)
+    #im1 = cv2.imshow('image2_green',green_mask_image2)
+    cv2.circle(image1,(cy,cz), 2, (255,255,255), -1)
     cv2.circle(image2, (cx,cz), 2, (255,255,255), -1)
 
     return np.array([cx,cy,cz])
@@ -175,15 +174,14 @@ class image_converter:
     print("Unit Direction Vector")
     print(uDVector)
 
-    #testAngle = np.arcsin((-1) * unitDirectionVector[1])
-
     uDVectorZAxis = np.array([0,0,-1])
 
     #myTestAngle = np.arccos((uDVectorZAxis[0] * uDVector[0] + uDVectorZAxis[1] * uDVector[1] + uDVectorZAxis[2] * uDVector[2]) / (np.sqrt(uDVectorZAxis[0]**2 + uDVectorZAxis[1]**2 + uDVectorZAxis[2]**2) * np.sqrt(uDVector[0]**2 + uDVector[1]**2 + uDVector[2]**2)))
 
-    # Obtain X angle for YZ plane- must consider positive and negative theta
+    # Obtain X angle for YZ plane, and Y angle from XZ plane respectively- must consider positive and negative theta
     x_angle = np.arccos(uDVectorZAxis[1] * uDVector[1] + uDVectorZAxis[2] * uDVector[2])
-    
+    y_angle = np.arccos(uDVectorZAxis[0] * uDVector[0] + uDVectorZAxis[2] * uDVector[2])
+
     # If angle X rotates anti-clockwise (positive theta value)
     if (uDVector[1] <= 0):
       rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),(-1)*np.sin(x_angle)],[0,np.sin(x_angle),np.cos(x_angle)]])
@@ -194,6 +192,27 @@ class image_converter:
       final_x_angle = np.arctan2(rotationMatrix_X[2][1],rotationMatrix_X[2][2])
 
     return final_x_angle
+    
+    # # If angle X rotates anti-clockwise (positive theta value)
+    # if (uDVector[0] >= 0 and uDVector[1] <= 0):
+    #   rotation_matrix_Y = np.array([[np.cos(y_angle),0,np.sin(y_angle)],[0,1,0],[(-1)*np.sin(y_angle),0,np.cos(y_angle)]])
+    #   rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),(-1)*np.sin(x_angle)],[0,np.sin(x_angle),np.cos(x_angle)]])
+    #   rotationMatrix_X_Y = np.dot(rotationMatrix_X,rotation_matrix_Y)
+    # elif (uDVector[0] >= 0 and uDVector[1] > 0):
+    #   rotation_matrix_Y = np.array([[np.cos(y_angle),0,np.sin(y_angle)],[0,1,0],[(-1)*np.sin(y_angle),0,np.cos(y_angle)]])
+    #   rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),np.sin(x_angle)],[0,(-1)*np.sin(x_angle),np.cos(x_angle)]])
+    #   rotationMatrix_X_Y = np.dot(rotationMatrix_X,rotation_matrix_Y)
+    # elif (uDVector[0] < 0 and uDVector[1] <= 0):
+    #   rotation_matrix_Y = np.array([[np.cos(y_angle),0,(-1)*np.sin(y_angle)],[0,1,0],[np.sin(y_angle),0,np.cos(y_angle)]])
+    #   rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),(-1)*np.sin(x_angle)],[0,np.sin(x_angle),np.cos(x_angle)]])
+    #   rotationMatrix_X_Y = np.dot(rotationMatrix_X,rotation_matrix_Y)
+    # elif (uDVector[0] < 0 and uDVector[1] > 0):
+    #   rotation_matrix_Y = np.array([[np.cos(y_angle),0,(-1)*np.sin(y_angle)],[0,1,0],[np.sin(y_angle),0,np.cos(y_angle)]])
+    #   rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),np.sin(x_angle)],[0,(-1)*np.sin(x_angle),np.cos(x_angle)]])
+    #   rotationMatrix_X_Y = np.dot(rotationMatrix_X,rotation_matrix_Y)
+
+    # final_angle = np.arctan2(rotationMatrix_X_Y[2][1],rotationMatrix_X_Y[2][2])
+    #return final_angle
 
   # Joint angle 3
   def detect_joint_angle3(self, image1, image2):
@@ -210,6 +229,18 @@ class image_converter:
     #angleY = (-1) * np.arcsin(-unitDirectionVector[0] / np.sqrt(1-(unitDirectionVector[1]**2)))
 
     uDVectorZAxis = np.array([0,0,-1])
+
+    # Obtain X angle for YZ plane- must consider positive and negative theta
+    x_angle = np.arccos(uDVectorZAxis[1] * uDVector[1] + uDVectorZAxis[2] * uDVector[2])
+    
+    # If angle X rotates anti-clockwise (positive theta value)
+    if (uDVector[1] <= 0):
+      rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),(-1)*np.sin(x_angle)],[0,np.sin(x_angle),np.cos(x_angle)]])
+      final_x_angle = np.arctan2(rotationMatrix_X[2][1],rotationMatrix_X[2][2])
+    # If angle X rotates clockwise (negative theta value)
+    elif (uDVector[1] > 0):
+      rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),np.sin(x_angle)],[0,(-1)*np.sin(x_angle),np.cos(x_angle)]])
+      final_x_angle = np.arctan2(rotationMatrix_X[2][1],rotationMatrix_X[2][2])
 
     # Obtain Y angle for XZ plane- must consider positive and negative theta
     y_angle = np.arccos(uDVectorZAxis[0] * uDVector[0] + uDVectorZAxis[2] * uDVector[2])
