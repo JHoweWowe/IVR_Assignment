@@ -10,9 +10,6 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, Float64
 from cv_bridge import CvBridge, CvBridgeError
 
-from scipy.linalg import subspace_angles
-
-
 class image_converter:
 
   # Defines publisher and subscriber
@@ -39,6 +36,11 @@ class image_converter:
     self.joint2_estimate_pub = rospy.Publisher("/robot/joint2_estimated_position",Float64,queue_size=10)
     self.joint3_estimate_pub = rospy.Publisher("/robot/joint3_estimated_position",Float64,queue_size=10)
     self.joint4_estimate_pub = rospy.Publisher("/robot/joint4_estimated_position",Float64,queue_size=10)
+
+    # SECTION 2.2: Publish target estimation
+    self.target_x_estimate_pub = rospy.Publisher("/target/target_x_estimated_position",Float64,queue_size=10)
+    self.target_y_estimate_pub = rospy.Publisher("/target/target_y_estimated_position",Float64,queue_size=10)
+    self.target_z_estimate_pub = rospy.Publisher("/target/target_z_estimated_position",Float64,queue_size=10)
   
   def detect_red(self, image1, image2):
     red_mask_image1 = cv2.inRange(image1, (0,0,100), (35,35,255))
@@ -146,6 +148,54 @@ class image_converter:
     yellow_mask_image2 = cv2.inRange(image2, (0,100,100), (35,255,255))
     M_image2 = cv2.moments(yellow_mask_image2)
     cx = int(M_image2['m10']/M_image2['m00'])
+
+    return np.array([cx,cy,cz])
+
+  # SECTION 2.2: Target detection
+  def detect_orange_sphere(self, image1, image2):
+
+    # Get orange mask from YZ plane- camera1
+    orange_mask_image1 = cv2.inRange(image1, (0,45,100), (15,90,150))
+    # Get orange mask from XZ plane- camera2
+    orange_mask_image2 = cv2.inRange(image2, (0,45,100), (15,90,150))
+
+    # Apply Canny Edge detection based on the image mask given as threshold
+    edged_shapes_YZ = cv2.Canny(orange_mask_image1, 40, 180)
+    edged_shapes_XZ = cv2.Canny(orange_mask_image2, 40, 180)
+    
+    contours_YZ, _ = cv2.findContours(edged_shapes_YZ.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours_XZ, _ = cv2.findContours(edged_shapes_XZ.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    #test = cv2.drawContours(image1, contours_YZ, 0, (0,255,0), 3)
+    sphere_YZ = contours_YZ[0]
+    sphere_XZ = contours_XZ[0]
+
+    M_YZ = cv2.moments(sphere_YZ)
+
+    # If moments cannot be detected properly, it would obtain centroid from previous estimates
+    last_cx = 0
+    last_cy = 0
+    last_cz = 0
+
+    if (M_YZ['m00'] != 0):
+      cy = int(M_YZ['m10']/M_YZ['m00'])
+      cz = int(M_YZ['m01']/M_YZ['m00'])
+      last_cy = cy
+      last_cz = cz
+    else:
+      cy = last_cy
+      cz = last_cz
+
+    M_XZ = cv2.moments(sphere_XZ)
+
+    if (M_XZ['m00'] != 0):
+      cx = int(M_XZ['m10']/M_XZ['m00'])
+      cz = int(M_XZ['m01']/M_XZ['m00']) 
+      last_cx = cx
+      last_cz = cz
+    else:
+      cx = last_cx
+      cz = last_cz
 
     return np.array([cx,cy,cz])
 
@@ -286,26 +336,26 @@ class image_converter:
       print(e)
 
     # ACTUAL VALUES
-    # Set movement of joint values according to sinusoidal signals
-    # and publish the movement values
-    # NOTE: Joint2 and Joint3 works - record for minimum 5 seconds only, more than 20 will be off
+    # Set movement of joint values according to sinusoidal signals and publish the movement values
+    # NOTE: All joints work - record for minimum 5 seconds only, more than 15 will be off
     
-    joint2Value = Float64()
-    joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    #joint2Value.data = (np.pi/5)
-    self.joint2_pub.publish(joint2Value)
+    # joint2Value = Float64()
+    # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
+    # #joint2Value.data = (np.pi/5)
+    # self.joint2_pub.publish(joint2Value)
 
-    joint3Value = Float64()
-    joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
-    #joint3Value.data = (np.pi/3)
-    self.joint3_pub.publish(joint3Value)
+    # joint3Value = Float64()
+    # joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
+    # #joint3Value.data = (np.pi/3)
+    # self.joint3_pub.publish(joint3Value)
 
-    joint4Value = Float64()
-    joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
-    self.joint4_pub.publish(joint4Value)
+    # joint4Value = Float64()
+    # joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
+    # self.joint4_pub.publish(joint4Value)
+
+    ## SECTION 2.1:
       
     # MY ESTIMATED VALUES
-    # TO BE COMPLETED
     # joint2EstimatedValue = Float64()
     # joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
     # self.joint2_estimate_pub.publish(joint2EstimatedValue)
@@ -314,19 +364,30 @@ class image_converter:
     # joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
     # self.joint3_estimate_pub.publish(joint3EstimatedValue)
 
-    joint4EstimatedValue = Float64()
-    joint4EstimatedValue.data = self.detect_joint_angle4(self.cv_image1, self.cv_image2)
-    self.joint4_estimate_pub.publish(joint4EstimatedValue)
-    
-    # Differences between actual values and my values
+    # joint4EstimatedValue = Float64()
+    # joint4EstimatedValue.data = self.detect_joint_angle4(self.cv_image1, self.cv_image2)
+    # self.joint4_estimate_pub.publish(joint4EstimatedValue)
+
+    # DIFFERENCES BETWEEN ACTUAL VALUES AND ESTIMATED VALUES
     #print("Differences between Joint2 actual and estimated joint angle values:")
     #print(abs(joint2Value.data - joint2EstimatedValue.data))
 
     # print("Differences between Joint3 actual and estimated joint angle values:")
     # print(abs(joint3Value.data - joint3EstimatedValue.data))
 
-    print("Differences between Joint4 actual and estimated joint angle values:")
-    print(abs(joint4Value.data - joint4EstimatedValue.data))
+    #print("Differences between Joint4 actual and estimated joint angle values:")
+    #print(abs(joint4Value.data - joint4EstimatedValue.data))
+
+    ## SECTION 2.2:
+    targetXEstimatedValue = Float64()
+    targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
+    self.target_x_estimate_pub.publish(targetXEstimatedValue)
+    targetYEstimatedValue = Float64()
+    targetYEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[1]
+    self.target_y_estimate_pub.publish(targetYEstimatedValue)
+    targetZEstimatedValue = Float64()
+    targetZEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[2]
+    self.target_z_estimate_pub.publish(targetZEstimatedValue)
 
     # Display images
     im1=cv2.imshow('window1', self.cv_image1)
