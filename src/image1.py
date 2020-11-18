@@ -43,12 +43,23 @@ class image_converter:
   def detect_red(self, image1, image2):
     red_mask_image1 = cv2.inRange(image1, (0,0,100), (35,35,255))
     M_image1 = cv2.moments(red_mask_image1)
-    cy = int(M_image1['m10']/M_image1['m00'])
-    cz = int(M_image1['m01']/M_image1['m00'])
+
+    if (M_image1['m00'] != 0):
+      cy = int(M_image1['m10']/M_image1['m00'])
+      cz = int(M_image1['m01']/M_image1['m00'])
+    else:
+      cy = self.detect_green(image1,image2)[1]
+      cz = self.detect_green(image1,image2)[2]
 
     red_mask_image2 = cv2.inRange(image2, (0,0,100), (35,35,255))
     M_image2 = cv2.moments(red_mask_image2)
-    cx = int(M_image2['m10']/M_image2['m00'])
+
+    if (M_image2['m00'] != 0):
+      cx = int(M_image2['m10']/M_image2['m00'])
+      cz = int(M_image2['m01']/M_image2['m00'])
+    else:
+      cx = self.detect_green(image1,image2)[0]
+      cz = self.detect_green(image1,image2)[2]
 
     #print("Dimensions for red blob:")
     #print(np.array([cx,cy,cz]))
@@ -84,8 +95,8 @@ class image_converter:
     #print("Dimensions for blue blob:")
     #print(np.array([cx,cy,cz]))
 
-    cv2.circle(image1,(cy,cz), 3, (255,255,255), -1)
-    cv2.circle(image2, (cx,cz), 3, (255,255,255), -1)
+    #cv2.circle(image1,(cy,cz), 3, (255,255,255), -1)
+    #cv2.circle(image2, (cx,cz), 3, (255,255,255), -1)
 
     return np.array([cx,cy,cz])
   
@@ -120,8 +131,8 @@ class image_converter:
     #print(np.array([cx,cy,cz]))
 
     #im1 = cv2.imshow('image2_green',green_mask_image2)
-    cv2.circle(image1,(cy,cz), 2, (255,255,255), -1)
-    cv2.circle(image2, (cx,cz), 2, (255,255,255), -1)
+    #cv2.circle(image1,(cy,cz), 2, (255,255,255), -1)
+    #cv2.circle(image2, (cx,cz), 2, (255,255,255), -1)
 
     return np.array([cx,cy,cz])
 
@@ -164,109 +175,89 @@ class image_converter:
 
   # Joint angle 2
   def detect_joint_angle2(self, image1, image2):
-    a = self.pixel2MeterForLink2(image1, image2)
 
-    joint2 = a * self.detect_blue(image1, image2)
-    joint3 = a * self.detect_green(image1, image2)
+    # Detection problem with images- should be done with image1 ONLY
+    blueBlob = self.detect_blue(image1, image2)
+    greenBlob = self.detect_green(image1, image2)
 
-    directionVector = joint3 - joint2
-    uDVector = directionVector / np.linalg.norm(directionVector)
-    print("Unit Direction Vector")
-    print(uDVector)
+    joint2 = greenBlob - blueBlob
 
-    uDVectorZAxis = np.array([0,0,-1])
+    # Create an axis perpendicular to rotation axis- X
+    normToXAxis = [0, 0, -1]
 
-    #myTestAngle = np.arccos((uDVectorZAxis[0] * uDVector[0] + uDVectorZAxis[1] * uDVector[1] + uDVectorZAxis[2] * uDVector[2]) / (np.sqrt(uDVectorZAxis[0]**2 + uDVectorZAxis[1]**2 + uDVectorZAxis[2]**2) * np.sqrt(uDVector[0]**2 + uDVector[1]**2 + uDVector[2]**2)))
+    dotProduct = normToXAxis[1] * joint2[1]  + normToXAxis[2] * joint2[2]
 
-    # Obtain X angle for YZ plane, and Y angle from XZ plane respectively- must consider positive and negative theta
-    x_angle = np.arccos(uDVectorZAxis[1] * uDVector[1] + uDVectorZAxis[2] * uDVector[2])
-    y_angle = np.arccos(uDVectorZAxis[0] * uDVector[0] + uDVectorZAxis[2] * uDVector[2])
+    normalizedVector1 = np.sqrt(normToXAxis[1]**2+normToXAxis[2]**2)
+    normalizedVector2 = np.sqrt(joint2[1]**2+joint2[2]**2) 
 
-    # If angle X rotates anti-clockwise (positive theta value)
-    if (uDVector[1] <= 0):
-      rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),(-1)*np.sin(x_angle)],[0,np.sin(x_angle),np.cos(x_angle)]])
-      final_x_angle = np.arctan2(rotationMatrix_X[2][1],rotationMatrix_X[2][2])
-    # If angle X rotates clockwise (negative theta value)
-    elif (uDVector[1] > 0):
-      rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),np.sin(x_angle)],[0,(-1)*np.sin(x_angle),np.cos(x_angle)]])
-      final_x_angle = np.arctan2(rotationMatrix_X[2][1],rotationMatrix_X[2][2])
+    x_angle = np.arccos(dotProduct / (normalizedVector1 * normalizedVector2))
 
-    return final_x_angle
-    
-    # # If angle X rotates anti-clockwise (positive theta value)
-    # if (uDVector[0] >= 0 and uDVector[1] <= 0):
-    #   rotation_matrix_Y = np.array([[np.cos(y_angle),0,np.sin(y_angle)],[0,1,0],[(-1)*np.sin(y_angle),0,np.cos(y_angle)]])
-    #   rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),(-1)*np.sin(x_angle)],[0,np.sin(x_angle),np.cos(x_angle)]])
-    #   rotationMatrix_X_Y = np.dot(rotationMatrix_X,rotation_matrix_Y)
-    # elif (uDVector[0] >= 0 and uDVector[1] > 0):
-    #   rotation_matrix_Y = np.array([[np.cos(y_angle),0,np.sin(y_angle)],[0,1,0],[(-1)*np.sin(y_angle),0,np.cos(y_angle)]])
-    #   rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),np.sin(x_angle)],[0,(-1)*np.sin(x_angle),np.cos(x_angle)]])
-    #   rotationMatrix_X_Y = np.dot(rotationMatrix_X,rotation_matrix_Y)
-    # elif (uDVector[0] < 0 and uDVector[1] <= 0):
-    #   rotation_matrix_Y = np.array([[np.cos(y_angle),0,(-1)*np.sin(y_angle)],[0,1,0],[np.sin(y_angle),0,np.cos(y_angle)]])
-    #   rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),(-1)*np.sin(x_angle)],[0,np.sin(x_angle),np.cos(x_angle)]])
-    #   rotationMatrix_X_Y = np.dot(rotationMatrix_X,rotation_matrix_Y)
-    # elif (uDVector[0] < 0 and uDVector[1] > 0):
-    #   rotation_matrix_Y = np.array([[np.cos(y_angle),0,(-1)*np.sin(y_angle)],[0,1,0],[np.sin(y_angle),0,np.cos(y_angle)]])
-    #   rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),np.sin(x_angle)],[0,(-1)*np.sin(x_angle),np.cos(x_angle)]])
-    #   rotationMatrix_X_Y = np.dot(rotationMatrix_X,rotation_matrix_Y)
-
-    # final_angle = np.arctan2(rotationMatrix_X_Y[2][1],rotationMatrix_X_Y[2][2])
-    #return final_angle
+    theta1 = np.arctan2(np.sin(x_angle), np.cos(x_angle))
+    if (joint2[1] < 0):
+      theta1 = theta1
+    else:
+      theta1 = (-1) * theta1
+    return theta1
 
   # Joint angle 3
   def detect_joint_angle3(self, image1, image2):
-    a = self.pixel2MeterForLink3(image1, image2)
 
-    joint2 = a * self.detect_blue(image1, image2)
-    joint3 = a * self.detect_green(image1, image2)
+    blueBlob = self.detect_blue(image1,image2)
+    greenBlob = self.detect_green(image1,image2)
 
-    directionVector = joint3 - joint2
-    uDVector = directionVector / np.linalg.norm(directionVector)
-    print("Unit Direction Vector for Y")
-    print(uDVector)
+    joint3 = greenBlob - blueBlob
 
-    #angleY = (-1) * np.arcsin(-unitDirectionVector[0] / np.sqrt(1-(unitDirectionVector[1]**2)))
+    #Create axis perpendicular to rotation axis- Y
+    normToYAxis = [0, 0, -1]
 
-    uDVectorZAxis = np.array([0,0,-1])
+    dotProduct = normToYAxis[0] * joint3[0] + normToYAxis[2] * joint3[2]
 
-    # Obtain X angle for YZ plane- must consider positive and negative theta
-    x_angle = np.arccos(uDVectorZAxis[1] * uDVector[1] + uDVectorZAxis[2] * uDVector[2])
+    normalizedVector1 = np.sqrt(normToYAxis[0]**2+normToYAxis[2]**2)
+    normalizedVector2 = np.sqrt(joint3[0]**2+joint3[2]**2)
+
+    y_angle = np.arccos(dotProduct / (normalizedVector1 * normalizedVector2))
+
+    beta = np.arctan2(np.sin(y_angle),np.cos(y_angle))
+    if (joint3[0] >= 0):
+      beta = beta
+    else:
+      beta = (-1) * beta
     
-    # If angle X rotates anti-clockwise (positive theta value)
-    if (uDVector[1] <= 0):
-      rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),(-1)*np.sin(x_angle)],[0,np.sin(x_angle),np.cos(x_angle)]])
-      final_x_angle = np.arctan2(rotationMatrix_X[2][1],rotationMatrix_X[2][2])
-    # If angle X rotates clockwise (negative theta value)
-    elif (uDVector[1] > 0):
-      rotationMatrix_X = np.array([[1,0,0],[0,np.cos(x_angle),np.sin(x_angle)],[0,(-1)*np.sin(x_angle),np.cos(x_angle)]])
-      final_x_angle = np.arctan2(rotationMatrix_X[2][1],rotationMatrix_X[2][2])
+    return beta
 
-    # Obtain Y angle for XZ plane- must consider positive and negative theta
-    y_angle = np.arccos(uDVectorZAxis[0] * uDVector[0] + uDVectorZAxis[2] * uDVector[2])
-    if (uDVector[0] >= 0):
-      rotation_matrix_Y = np.array([[np.cos(y_angle),0,np.sin(y_angle)],[0,1,0],[(-1)*np.sin(y_angle),0,np.cos(y_angle)]])
-    elif (uDVector[0] < 0):
-      rotation_matrix_Y = np.array([[np.cos(y_angle),0,(-1)*np.sin(y_angle)],[0,1,0],[np.sin(y_angle),0,np.cos(y_angle)]])
-    
-    final_y_angle = np.arctan2((-1)*rotation_matrix_Y[2][0],np.sqrt(rotation_matrix_Y[2][1]**2+rotation_matrix_Y[2][2]**2))
-
-    return final_y_angle
-
-  # Joint_angle 4 from camera 1 and 2
+  # Joint_angle 4
   def detect_joint_angle4(self, image1, image2):
-    a = self.pixel2MeterForLink4(image1, image2)
 
-    joint3 = a * self.detect_green(image1, image2)
-    joint4 = a * self.detect_red(image1, image2)
+    # Obtain the joint link between green blob and red blob
+    blueBlob = self.detect_blue(image1,image2)
+    greenBlob = self.detect_green(image1,image2)
+    redBlob = self.detect_red(image1,image2)
 
-    # Calculate direction vector wrt to difference between joint4 and joint3
-    directionVector = joint4 - joint3
-    unitDirectionVector = directionVector / np.linalg.norm(directionVector)
+    joint4 = redBlob - greenBlob
 
-    angle = np.arcsin(unitDirectionVector[1])
+    sharedJoint = greenBlob - blueBlob
 
-    return angle
+    # Projection from joint4 onto the shared joint
+    dotProduct1 = joint4[0] * sharedJoint[0] + joint4[1] * sharedJoint[1] + joint4[2] * sharedJoint[2]
+    normalizedVector1 = np.sqrt(sharedJoint[0]**2 + sharedJoint[1]**2 + sharedJoint[2]**2)
+
+    vectorProjection = np.multiply((dotProduct1 / normalizedVector1), sharedJoint)
+
+    #print(vectorProjection)
+
+    dotProduct2 = vectorProjection[0] * joint4[0] + vectorProjection[1] * joint4[1] + vectorProjection[2] * joint4[2]
+    newNormalizedVector1 = np.sqrt(joint4[0]**2+joint4[1]**2+joint4[2]**2)
+    newNormalizedVector2 = np.sqrt(vectorProjection[0]**2+vectorProjection[1]**2+vectorProjection[2]**2)
+    
+    angle = np.arccos(dotProduct2 / (newNormalizedVector1 * newNormalizedVector2))
+
+    # Currently angle doesn't take into consideration for some quadrants...but recording is good enough
+    theta1 = np.arctan2(np.sin(angle), np.cos(angle))
+    if (joint4[1] < 0):
+      theta1 = theta1
+    else:
+      theta1 = (-1) * theta1
+    return theta1
 
   # Recieve data from camera 1, process it, and publish
   def callback1(self,data):
@@ -297,38 +288,45 @@ class image_converter:
     # ACTUAL VALUES
     # Set movement of joint values according to sinusoidal signals
     # and publish the movement values
-    # Note: Joint 2 movement detection on its own works
+    # NOTE: Joint2 and Joint3 works - record for minimum 5 seconds only, more than 20 will be off
     
-    #joint2Value = Float64()
-    #joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    #joint2Value.data = -(np.pi/4)
-    #self.joint2_pub.publish(joint2Value)
+    joint2Value = Float64()
+    joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
+    #joint2Value.data = (np.pi/5)
+    self.joint2_pub.publish(joint2Value)
 
     joint3Value = Float64()
     joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
-    #joint3Value.data = (np.pi/2)
+    #joint3Value.data = (np.pi/3)
     self.joint3_pub.publish(joint3Value)
 
-    #joint4Value = Float64()
-    #joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
-    #self.joint4_pub.publish(joint4Value)
+    joint4Value = Float64()
+    joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
+    self.joint4_pub.publish(joint4Value)
       
     # MY ESTIMATED VALUES
     # TO BE COMPLETED
-    #joint2EstimatedValue = Float64()
-    #joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
-    #self.joint2_estimate_pub.publish(joint2EstimatedValue)
+    # joint2EstimatedValue = Float64()
+    # joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
+    # self.joint2_estimate_pub.publish(joint2EstimatedValue)
 
-    joint3EstimatedValue = Float64()
-    joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
-    self.joint3_estimate_pub.publish(joint3EstimatedValue)
+    # joint3EstimatedValue = Float64()
+    # joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
+    # self.joint3_estimate_pub.publish(joint3EstimatedValue)
+
+    joint4EstimatedValue = Float64()
+    joint4EstimatedValue.data = self.detect_joint_angle4(self.cv_image1, self.cv_image2)
+    self.joint4_estimate_pub.publish(joint4EstimatedValue)
     
     # Differences between actual values and my values
     #print("Differences between Joint2 actual and estimated joint angle values:")
     #print(abs(joint2Value.data - joint2EstimatedValue.data))
 
-    print("Differences between Joint3 actual and estimated joint angle values:")
-    print(abs(joint3Value.data - joint3EstimatedValue.data))
+    # print("Differences between Joint3 actual and estimated joint angle values:")
+    # print(abs(joint3Value.data - joint3EstimatedValue.data))
+
+    print("Differences between Joint4 actual and estimated joint angle values:")
+    print(abs(joint4Value.data - joint4EstimatedValue.data))
 
     # Display images
     im1=cv2.imshow('window1', self.cv_image1)
