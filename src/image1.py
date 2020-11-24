@@ -305,8 +305,8 @@ class image_converter:
     #self.joint2_pub.publish(joint2Value)
 
     joint3Value = Float64()
-    joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
-    #joint3Value.data = (np.pi/2)
+    # joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
+    joint3Value.data = (np.pi/2)
     self.joint3_pub.publish(joint3Value)
 
     #joint4Value = Float64()
@@ -319,16 +319,17 @@ class image_converter:
     #joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
     #self.joint2_estimate_pub.publish(joint2EstimatedValue)
 
-    joint3EstimatedValue = Float64()
-    joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
-    self.joint3_estimate_pub.publish(joint3EstimatedValue)
+    # joint3EstimatedValue = Float64()
+    # joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
+    # self.joint3_estimate_pub.publish(joint3EstimatedValue)
     
     # Differences between actual values and my values
     #print("Differences between Joint2 actual and estimated joint angle values:")
     #print(abs(joint2Value.data - joint2EstimatedValue.data))
 
-    print("Differences between Joint3 actual and estimated joint angle values:")
-    print(abs(joint3Value.data - joint3EstimatedValue.data))
+    # print("Differences between Joint3 actual and estimated joint angle values:")
+    # print(abs(joint3Value.data - joint3EstimatedValue.data))
+
 
     # Display images
     im1=cv2.imshow('window1', self.cv_image1)
@@ -336,10 +337,10 @@ class image_converter:
     cv2.waitKey(1)
 
     # Publish the results
-    try: 
-      self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
-    except CvBridgeError as e:
-      print(e)
+    # try: 
+    #   self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
+    # except CvBridgeError as e:
+    #   print(e)
 
 # call the class
 def main(args):
