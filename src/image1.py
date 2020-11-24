@@ -255,6 +255,27 @@ class image_converter:
     ja3 = self.detect_joint_angle3(image)
     ja4 = self.detect_joint_angle4(image)
     return np.array([ja1,ja2,ja3,ja4])
+
+  # Calculate end effector position given joint angles
+  def forwardKinematics(self,theta1,theta2,theta3,theta4):
+    A10 = np.array([[-np.sin(theta1), 0, np.cos(theta1), 0],
+    [np.cos(theta1), 0, np.sin(theta1), 0],
+    [0, 1, 0, 2.5],
+    [0,0,0,1]])
+    A21 = np.array([[-np.sin(theta2), 0, np.cos(theta2), 0],
+    [np.cos(theta2), 0, np.sin(theta2), 0],
+    [0, 1, 0, 0],
+    [0,0,0,1]])
+    A32 = np.array([[np.cos(theta3), 0, -np.sin(theta3), 3.5*np.cos(theta3)],
+    [np.sin(theta3), 0, np.cos(theta3), 3.5*np.sin(theta3)],
+    [0, -1, 0, 0],
+    [0,0,0,1]])
+    A43 = np.array([[np.cos(theta4), -np.sin(theta4), 0, 3*np.cos(theta4)],
+    [np.sin(theta4), np.cos(theta4), 0, 3*np.sin(theta4)],
+    [0, 0, 1, 0],
+    [0,0,0,1]])
+    htm = np.dot(A10,np.dot(A21,np.dot(A32,A43)))
+    return htm[:3,-1]
   
   # Recieve data from camera 1, process it, and publish
   def callback1(self,data):
@@ -298,6 +319,11 @@ class image_converter:
     self.joint4_pub.publish(joint4Value)
     
     # MY VALUES
+
+    joint_angles = [0,0,np.pi/2,0]
+    fk_position = self.forwardKinematics(*joint_angles)
+    end_effector_position = self.detect_red(self.cv_image1, self.cv_image2) - self.detect_yellow(self.cv_image1, self.cv_image2)
+    print("FK :", fk_position)
     
     # Differences between actual values and my values
     print("Differences:")
