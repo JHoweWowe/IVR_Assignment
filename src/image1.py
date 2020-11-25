@@ -9,6 +9,8 @@ from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, Float64
 from cv_bridge import CvBridge, CvBridgeError
+from rospy.numpy_msg import numpy_msg
+
 
 class image_converter:
 
@@ -22,7 +24,7 @@ class image_converter:
     
     # initialize a subscriber to recieve messages from a topic named /robot/camera1/image_raw and use callback function to recieve data
     self.image_sub1 = rospy.Subscriber("/camera1/robot/image_raw",Image,self.callback1)
-    self.image_sub1 = rospy.Subscriber("/camera2/robot/image_raw",Image,self.callback2)
+    self.image_sub2 = rospy.Subscriber("/camera2/robot/image_raw",Image,self.callback2)
 
     # initialize the bridge between openCV and ROS
     self.bridge = CvBridge()
@@ -41,6 +43,13 @@ class image_converter:
     self.target_x_estimate_pub = rospy.Publisher("/target/target_x_estimated_position",Float64,queue_size=10)
     self.target_y_estimate_pub = rospy.Publisher("/target/target_y_estimated_position",Float64,queue_size=10)
     self.target_z_estimate_pub = rospy.Publisher("/target/target_z_estimated_position",Float64,queue_size=10)
+
+    # SECTION 3.1: Publish estimated end effector position
+    self.end_effector_cv = rospy.Publisher("robot/end_effector",Float64,queue_size=10)
+    self.angle1_actual = rospy.Subscriber("/robot/joint1_position_controller/command",Float64,self.callback3)
+    self.angle2_actual = rospy.Subscriber("/robot/joint2_position_controller/command",Float64,self.callback3)
+    self.angle3_actual = rospy.Subscriber("/robot/joint3_position_controller/command",Float64,self.callback3)
+    self.angle4_actual = rospy.Subscriber("/robot/joint4_position_controller/command",Float64,self.callback3)
   
   def detect_red(self, image1, image2):
     red_mask_image1 = cv2.inRange(image1, (0,0,100), (35,35,255))
@@ -66,7 +75,7 @@ class image_converter:
     #print("Dimensions for red blob:")
     #print(np.array([cx,cy,cz]))
 
-    return np.array([cx,cy,cz])
+    return np.array([cx,cy,cz], dtype= Float64)
 
   def detect_blue(self, image1, image2):
     # Isolate blue color
@@ -100,7 +109,7 @@ class image_converter:
     #cv2.circle(image1,(cy,cz), 3, (255,255,255), -1)
     #cv2.circle(image2, (cx,cz), 3, (255,255,255), -1)
 
-    return np.array([cx,cy,cz])
+    return np.array([cx,cy,cz],dtype=Float64)
   
   def detect_green(self, image1, image2):
     # Isolate green color- threshold slightly differs!
@@ -272,11 +281,6 @@ class image_converter:
       beta = beta
     else:
       beta = (-1) * beta
-    
-    return beta
-
-  # Joint_angle 4
-  def detect_joint_angle4(self, image1, image2):
 
     # Obtain the joint link between green blob and red blob
     blueBlob = self.detect_blue(image1,image2)
@@ -309,6 +313,27 @@ class image_converter:
       theta1 = (-1) * theta1
     return theta1
 
+    # Calculate end effector position given joint angles
+  def forwardKinematics(self,theta1,theta2,theta3,theta4):
+    A10 = np.array([[-np.sin(theta1), 0, np.cos(theta1), 0],
+    [np.cos(theta1), 0, np.sin(theta1), 0],
+    [0, 1, 0, 2.5],
+    [0,0,0,1]])
+    A21 = np.array([[-np.sin(theta2), 0, np.cos(theta2), 0],
+    [np.cos(theta2), 0, np.sin(theta2), 0],
+    [0, 1, 0, 0],
+    [0,0,0,1]])
+    A32 = np.array([[np.cos(theta3), 0, -np.sin(theta3), 3.5*np.cos(theta3)],
+    [np.sin(theta3), 0, np.cos(theta3), 3.5*np.sin(theta3)],
+    [0, -1, 0, 0],
+    [0,0,0,1]])
+    A43 = np.array([[np.cos(theta4), -np.sin(theta4), 0, 3*np.cos(theta4)],
+    [np.sin(theta4), np.cos(theta4), 0, 3*np.sin(theta4)],
+    [0, 0, 1, 0],
+    [0,0,0,1]])
+    htm = np.dot(A10,np.dot(A21,np.dot(A32,A43)))
+    return htm[:3,-1]
+
   # Recieve data from camera 1, process it, and publish
   def callback1(self,data):
     # Recieve the image
@@ -321,21 +346,20 @@ class image_converter:
     #cv2.imwrite('image_copy.png', cv_image)
 
     # Publish the results
-    try: 
-      self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
-
+    try:
+      self.cv_image2 = self.bridge.imgmsg_to_cv2(data, "bgr8")
     except CvBridgeError as e:
       print(e)
   
   # Recieve data from camera 2, process it, and publish
   def callback2(self, data):
-    # Recieve the image
+
     try:
-      self.cv_image2 = self.bridge.imgmsg_to_cv2(data, "bgr8")
+      self.cv_image2 = self.bridge.imgmsg_to_cv2(data,"bgr8")
+
     except CvBridgeError as e:
       print(e)
 
-    # ACTUAL VALUES
     # Set movement of joint values according to sinusoidal signals and publish the movement values
     # NOTE: All joints work - record for minimum 5 seconds only, more than 15 will be off
     
@@ -379,26 +403,34 @@ class image_converter:
     #print(abs(joint4Value.data - joint4EstimatedValue.data))
 
     ## SECTION 2.2:
-    targetXEstimatedValue = Float64()
-    targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
-    self.target_x_estimate_pub.publish(targetXEstimatedValue)
-    targetYEstimatedValue = Float64()
-    targetYEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[1]
-    self.target_y_estimate_pub.publish(targetYEstimatedValue)
-    targetZEstimatedValue = Float64()
-    targetZEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[2]
-    self.target_z_estimate_pub.publish(targetZEstimatedValue)
+    # targetXEstimatedValue = Float64()
+    # targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
+    # self.target_x_estimate_pub.publish(targetXEstimatedValue)
+    # targetYEstimatedValue = Float64()
+    # targetYEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[1]
+    # self.target_y_estimate_pub.publish(targetYEstimatedValue)
+    # targetZEstimatedValue = Float64()
+    # targetZEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[2]
+    # self.target_z_estimate_pub.publish(targetZEstimatedValue)
+
+
 
     # Display images
-    im1=cv2.imshow('window1', self.cv_image1)
-    im2=cv2.imshow('window2', self.cv_image2)
-    cv2.waitKey(1)
+    # im1=cv2.imshow('window1', self.cv_image1)
+    # im2=cv2.imshow('window2', self.cv_image2)
+    # cv2.waitKey(1)
 
     # Publish the results
     # try: 
     #   self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
     # except CvBridgeError as e:
     #   print(e)
+
+
+  def callback3(self,data):
+    end_effector_position_cv = self.detect_red(self.cv_image1,self.cv_image2) - self.detect_red(self.cv_image1,self.cv_image2)
+    self.end_effector_cv.publish(end_effector_position_cv[0])
+
 
 # call the class
 def main(args):
