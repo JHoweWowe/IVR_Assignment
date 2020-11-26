@@ -322,7 +322,9 @@ class image_converter:
       beta = beta
     else:
       beta = (-1) * beta
+    return beta
 
+  def detect_joint_angle4(self, image1, image2):
     # Obtain the joint link between green blob and red blob
     blueBlob = self.detect_blue(image1,image2)
     greenBlob = self.detect_green(image1,image2)
@@ -362,7 +364,7 @@ class image_converter:
 
 
   def forwardKinematics(self,theta1,theta2,theta3,theta4):
-    position = self.homogenous_transformation_matrix[:1,-1].evalf({
+    position = self.homogenous_transformation_matrix[:1,-1].evalf(subs = {
             self.t1 : theta1,
             self.t2 : theta2,
             self.t3 : theta3,
@@ -370,13 +372,14 @@ class image_converter:
         })
     return position
 
-  def calculatePIJacobian(image1, image2):
+  def calculatePIJacobian(self,image1, image2):
     ja1 = 0
     ja2 = self.detect_joint_angle2(image1, image2)
     ja3 = self.detect_joint_angle3(image1, image2)
     ja4 = self.detect_joint_angle4(image1, image2)
-    jacobian = sp.jacobian(self.homogenous_transformation_matrix[:1,-1], self.joint_angle_vars)
-    jacobian = jacobian.evalf({
+    jacobian = self.homogenous_transformation_matrix[:-1,-1].jacobian(self.joint_angle_vars)
+    print(jacobian.shape)
+    jacobian = jacobian.evalf(subs = {
       self.t1 : ja1,
       self.t2 : ja2,
       self.t3 : ja3,
@@ -388,18 +391,22 @@ class image_converter:
 
   def pd_control(self,image1,image2):
     K_p = 0.1 * np.eye(3)
-    K_d = 0.1 * np.eye(3)
+    K_d = np.eye(3)
     curr_time = np.array([rospy.get_time()])
     dt = curr_time - self.time_previous_step
     self.time_previous_step = curr_time
     end_effector_pos = self.detect_red(image1, image2)
-    desired_pos = self.detect_orange_sphere(image1,image2)
+    # desired_pos = self.detect_orange_sphere(image1,image2)
+    desired_pos = np.array([0.0,0.0,0.0])
     self.de = ((desired_pos - end_effector_pos) - self.e) / dt
     self.e = desired_pos - end_effector_pos
     q = self.estimateJointAngles(image1,image2)
     J_inv = self.calculatePIJacobian(image1,image2)
     gains = np.dot(K_p, self.e.T) + np.dot(K_d, self.de.T)
     qdot = np.dot(J_inv, gains)
+    print("J^-1", J_inv.shape)
+    print("gains", gains.shape)
+    print("qdot", qdot.shape)
     qnew = q + (qdot * dt)
     return qnew
 
