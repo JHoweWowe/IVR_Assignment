@@ -5,6 +5,7 @@ import sys
 import rospy
 import cv2
 import numpy as np
+import sympy as sp
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, Float64
@@ -45,11 +46,51 @@ class image_converter:
     self.target_z_estimate_pub = rospy.Publisher("/target/target_z_estimated_position",Float64,queue_size=10)
 
     # SECTION 3.1: Publish estimated end effector position
-    self.end_effector_cv = rospy.Publisher("robot/end_effector",Float64,queue_size=10)
-    self.angle1_actual = rospy.Subscriber("/robot/joint1_position_controller/command",Float64,self.callback3)
-    self.angle2_actual = rospy.Subscriber("/robot/joint2_position_controller/command",Float64,self.callback3)
-    self.angle3_actual = rospy.Subscriber("/robot/joint3_position_controller/command",Float64,self.callback3)
-    self.angle4_actual = rospy.Subscriber("/robot/joint4_position_controller/command",Float64,self.callback3)
+    # self.end_effector_cv = rospy.Publisher("robot/end_effector",Float64,queue_size=10)
+    # self.angle1_actual = rospy.Subscriber("/robot/joint1_position_controller/command",Float64,self.callback3)
+    # self.angle2_actual = rospy.Subscriber("/robot/joint2_position_controller/command",Float64,self.callback3)
+    # self.angle3_actual = rospy.Subscriber("/robot/joint3_position_controller/command",Float64,self.callback3)
+    # self.angle4_actual = rospy.Subscriber("/robot/joint4_position_controller/command",Float64,self.callback3)
+
+
+    # KINEMATICS
+
+    self.t1, self.t2, self.t3, self.t4 = sp.symbols("t1 t2 t3 t4")
+    self.joint_angle_vars = sp.Matrix([self.t1, self.t2, self.t3, self.t4])
+
+    A10 = sp.Matrix([
+        [-sp.sin(self.t1), 0, sp.cos(self.t1), 0],
+        [sp.cos(self.t1), 0, sp.sin(self.t1), 0],
+        [0,1,0,2.5],
+        [0,0,0,1]
+    ])
+
+    A21 = sp.Matrix([
+        [-sp.sin(self.t2), 0, sp.cos(self.t2), 0],
+        [sp.cos(self.t2), 0, sp.sin(self.t2), 0],
+        [0, 1, 0, 0],
+        [0,0,0,1]
+    ])
+
+    A32 = sp.Matrix([
+        [sp.cos(self.t3), 0, -sp.sin(self.t3), 3.5*sp.cos(self.t3)],
+        [sp.sin(self.t3), 0, sp.cos(self.t3), 3.5*sp.sin(self.t3)],
+        [0, -1, 0, 0],
+        [0,0,0,1]
+    ])
+        
+    A43 = sp.Matrix([
+        [sp.cos(self.t4), -sp.sin(self.t4), 0, 3*sp.cos(self.t4)],
+        [sp.sin(self.t4), sp.cos(self.t4), 0, 3*sp.sin(self.t4)],
+        [0, 0, 1, 0],
+        [0,0,0,1]
+    ])
+
+    self.homogenous_transformation_matrix = A10*A21*A32*A43
+    self.e = np.zeros((3,1), dtype='float64')  
+    self.de = np.zeros((3,1), dtype='float64')
+
+    self.time_previous_step = np.array([rospy.get_time()], dtype='float64')
   
   def detect_red(self, image1, image2):
     red_mask_image1 = cv2.inRange(image1, (0,0,100), (35,35,255))
@@ -313,26 +354,57 @@ class image_converter:
       theta1 = (-1) * theta1
     return theta1
 
-    # Calculate end effector position given joint angles
+  def estimateJointAngles(self, image1, image2):
+    ja2 = self.detect_joint_angle2(image1, image2)
+    ja3 = self.detect_joint_angle3(image1, image2)
+    ja4 = self.detect_joint_angle4(image1, image2)
+    return np.array([0.0,ja2,ja3,ja4])
+
+
   def forwardKinematics(self,theta1,theta2,theta3,theta4):
-    A10 = np.array([[-np.sin(theta1), 0, np.cos(theta1), 0],
-    [np.cos(theta1), 0, np.sin(theta1), 0],
-    [0, 1, 0, 2.5],
-    [0,0,0,1]])
-    A21 = np.array([[-np.sin(theta2), 0, np.cos(theta2), 0],
-    [np.cos(theta2), 0, np.sin(theta2), 0],
-    [0, 1, 0, 0],
-    [0,0,0,1]])
-    A32 = np.array([[np.cos(theta3), 0, -np.sin(theta3), 3.5*np.cos(theta3)],
-    [np.sin(theta3), 0, np.cos(theta3), 3.5*np.sin(theta3)],
-    [0, -1, 0, 0],
-    [0,0,0,1]])
-    A43 = np.array([[np.cos(theta4), -np.sin(theta4), 0, 3*np.cos(theta4)],
-    [np.sin(theta4), np.cos(theta4), 0, 3*np.sin(theta4)],
-    [0, 0, 1, 0],
-    [0,0,0,1]])
-    htm = np.dot(A10,np.dot(A21,np.dot(A32,A43)))
-    return htm[:3,-1]
+    position = self.homogenous_transformation_matrix[:1,-1].evalf({
+            self.t1 : theta1,
+            self.t2 : theta2,
+            self.t3 : theta3,
+            self.t4 : theta4
+        })
+    return position
+
+  def calculatePIJacobian(image1, image2):
+    ja1 = 0
+    ja2 = self.detect_joint_angle2(image1, image2)
+    ja3 = self.detect_joint_angle3(image1, image2)
+    ja4 = self.detect_joint_angle4(image1, image2)
+    jacobian = sp.jacobian(self.homogenous_transformation_matrix[:1,-1], self.joint_angle_vars)
+    jacobian = jacobian.evalf({
+      self.t1 : ja1,
+      self.t2 : ja2,
+      self.t3 : ja3,
+      self.t4 : ja4
+    })
+    J = np.array(jacobian).astype(np.float64)
+    J_inv = np.linalg.pinv(J)
+    return J_inv
+
+  def pd_control(self,image1,image2):
+    K_p = 0.1 * np.eye(3)
+    K_d = 0.1 * np.eye(3)
+    curr_time = np.array([rospy.get_time()])
+    dt = curr_time - self.time_previous_step
+    self.time_previous_step = curr_time
+    end_effector_pos = self.detect_red(image1, image2)
+    desired_pos = self.detect_orange_sphere(image1,image2)
+    self.de = ((desired_pos - end_effector_pos) - self.e) / dt
+    self.e = desired_pos - end_effector_pos
+    q = self.estimateJointAngles(image1,image2)
+    J_inv = self.calculatePIJacobian(image1,image2)
+    gains = np.dot(K_p, self.e.T) + np.dot(K_d, self.de.T)
+    qdot = np.dot(J_inv, gains)
+    qnew = q + (qdot * dt)
+    return qnew
+
+
+
 
   # Recieve data from camera 1, process it, and publish
   def callback1(self,data):
@@ -426,10 +498,20 @@ class image_converter:
     # except CvBridgeError as e:
     #   print(e)
 
+    new_joint_angles = self.pd_control(self.cv_image1, self.cv_image2)
+    self.joint1=Float64()
+    self.joint1.data= new_joint_angles[0]
+    self.joint2=Float64()
+    self.joint2.data= new_joint_angles[1]
+    self.joint3=Float64()
+    self.joint3.data= new_joint_angles[2]
+    self.joint4=Float64()
+    self.joint4.data= new_joint_angles[2]
 
-  def callback3(self,data):
-    end_effector_position_cv = self.detect_red(self.cv_image1,self.cv_image2) - self.detect_red(self.cv_image1,self.cv_image2)
-    self.end_effector_cv.publish(end_effector_position_cv[0])
+    self.joint2_pub.publish(self.joint2)
+    self.joint3_pub.publish(self.joint3)
+    self.joint4_pub.publish(self.joint4)
+
 
 
 # call the class

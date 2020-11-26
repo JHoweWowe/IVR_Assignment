@@ -5,11 +5,11 @@ import sys
 import rospy
 import cv2
 import numpy as np
+import sympy as sp
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, Float64
-from rospy.numpy_msg import numpy_msg
-from rospy_tutorials.msg import Floats
+
 
 class Kinematics:
 
@@ -22,42 +22,61 @@ class Kinematics:
         self.angle3_actual = rospy.Subscriber("/robot/joint3_position_controller/command",Float64,self.callback3)
         self.angle4_actual = rospy.Subscriber("/robot/joint4_position_controller/command",Float64,self.callback4)
 
-        self.end_effector_cv = rospy.Subscriber("robot/end_effector",numpy_msg(Floats),self.compareCVFK)
+        self.t1, self.t2, self.t3, self.t4 = sp.symbols("t1 t2 t3 t4")
+        joint_angles = sp.Matrix([self.t1, self.t2, self.t3, self.t4])
 
-        self.joint_array = [0.0,0.0,0.0,0.0]
+        A10 = sp.Matrix([
+            [-sp.sin(self.t1), 0, sp.cos(self.t1), 0],
+            [sp.cos(self.t1), 0, sp.sin(self.t1), 0],
+            [0,1,0,2.5],
+            [0,0,0,1]
+        ])
+
+        A21 = sp.Matrix([
+            [-sp.sin(self.t2), 0, sp.cos(self.t2), 0],
+            [sp.cos(self.t2), 0, sp.sin(self.t2), 0],
+            [0, 1, 0, 0],
+            [0,0,0,1]
+        ])
+
+        A32 = sp.Matrix([
+            [sp.cos(self.t3), 0, -sp.sin(self.t3), 3.5*sp.cos(self.t3)],
+            [sp.sin(self.t3), 0, sp.cos(self.t3), 3.5*sp.sin(self.t3)],
+            [0, -1, 0, 0],
+            [0,0,0,1]
+        ])
+            
+        A43 = sp.Matrix([
+            [sp.cos(self.t4), -sp.sin(self.t4), 0, 3*sp.cos(self.t4)],
+            [sp.sin(self.t4), sp.cos(self.t4), 0, 3*sp.sin(self.t4)],
+            [0, 0, 1, 0],
+            [0,0,0,1]
+        ])
+
+        self.homogenous_transformation_matrix = A10*A21*A32*A43
+        
 
     def forwardKinematics(self,theta1,theta2,theta3,theta4):
-        A10 = np.array([[-np.sin(theta1), 0, np.cos(theta1), 0],
-        [np.cos(theta1), 0, np.sin(theta1), 0],
-        [0, 1, 0, 2.5],
-        [0,0,0,1]])
-        A21 = np.array([[-np.sin(theta2), 0, np.cos(theta2), 0],
-        [np.cos(theta2), 0, np.sin(theta2), 0],
-        [0, 1, 0, 0],
-        [0,0,0,1]])
-        A32 = np.array([[np.cos(theta3), 0, -np.sin(theta3), 3.5*np.cos(theta3)],
-        [np.sin(theta3), 0, np.cos(theta3), 3.5*np.sin(theta3)],
-        [0, -1, 0, 0],
-        [0,0,0,1]])
-        A43 = np.array([[np.cos(theta4), -np.sin(theta4), 0, 3*np.cos(theta4)],
-        [np.sin(theta4), np.cos(theta4), 0, 3*np.sin(theta4)],
-        [0, 0, 1, 0],
-        [0,0,0,1]])
-        htm = np.dot(A10,np.dot(A21,np.dot(A32,A43)))
-        return htm[:3,-1]
+        position = self.homogenous_transformation_matrix[:1,-1].evalf({
+            self.t1 : theta1,
+            self.t2 : theta2,
+            self.t3 : theta3,
+            self.t4 : theta4
+        })
+        return position
 
 
     def callback1(self,data):
-        self.joint_array[0] = data
+        print(data)
 
     def callback2(self,data):
-        self.joint_array[1] = data
+        print(data)
 
     def callback3(self,data):
-        self.joint_array[2] = data
+        print(data)a
 
     def callback4(self,data):
-        self.joint_array[3] = data
+        print(data)
 
     def compareCVFK(self,data):
         effectorPositionFK = self.forwardKinematics(*self.joint_array)
