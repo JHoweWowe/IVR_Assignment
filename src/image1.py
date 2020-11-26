@@ -116,7 +116,7 @@ class image_converter:
     #print("Dimensions for red blob:")
     #print(np.array([cx,cy,cz]))
 
-    return np.array([cx,cy,cz], dtype= Float64)
+    return np.array([cx,cy,-cz], dtype= Float64)
 
   def detect_blue(self, image1, image2):
     # Isolate blue color
@@ -150,7 +150,7 @@ class image_converter:
     #cv2.circle(image1,(cy,cz), 3, (255,255,255), -1)
     #cv2.circle(image2, (cx,cz), 3, (255,255,255), -1)
 
-    return np.array([cx,cy,cz],dtype=Float64)
+    return np.array([cx,cy,-cz],dtype=Float64)
   
   def detect_green(self, image1, image2):
     # Isolate green color- threshold slightly differs!
@@ -186,7 +186,7 @@ class image_converter:
     #cv2.circle(image1,(cy,cz), 2, (255,255,255), -1)
     #cv2.circle(image2, (cx,cz), 2, (255,255,255), -1)
 
-    return np.array([cx,cy,cz])
+    return np.array([cx,cy,-cz])
 
   # Testing purposes only
   def detect_yellow(self, image1, image2):
@@ -199,7 +199,7 @@ class image_converter:
     M_image2 = cv2.moments(yellow_mask_image2)
     cx = int(M_image2['m10']/M_image2['m00'])
 
-    return np.array([cx,cy,cz])
+    return np.array([cx,cy,-cz])
 
   # SECTION 2.2: Target detection
   def detect_orange_sphere(self, image1, image2):
@@ -247,7 +247,25 @@ class image_converter:
       cx = last_cx
       cz = last_cz
 
-    return np.array([cx,cy,cz])
+    return np.array([cx,cy,-cz])
+
+  def p2mBlue(self,image1,image2):
+    blue = self.detect_blue(image1, image2)
+    yellow = self.detect_yellow(image1, image2)
+    v = blue - yellow
+    return 2.5 * v/np.linalg.norm(v)
+
+  def p2mGreen(self,image1,image2):
+    green = self.detect_green(image1, image2)
+    blue = self.detect_blue(image1, image2)
+    v = green - blue
+    return 3.5 * v/np.linalg.norm(v) + self.p2mBlue(image1, image2)
+
+  def p2mRed(self,image1,image2):
+    red = self.detect_red(image1, image2)
+    green = self.detect_green(image1, image2)
+    v = red - green
+    return 3 * v/np.linalg.norm(v) + self.p2mGreen(image1, image2)
 
   # Rotates link 2 based on X axis- use camera 1
   def pixel2MeterForLink2(self, image1, image2):
@@ -283,7 +301,7 @@ class image_converter:
     joint2 = greenBlob - blueBlob
 
     # Create an axis perpendicular to rotation axis- X
-    normToXAxis = [0, 0, -1]
+    normToXAxis = [0, 0, 1]
 
     dotProduct = normToXAxis[1] * joint2[1]  + normToXAxis[2] * joint2[2]
 
@@ -308,7 +326,7 @@ class image_converter:
     joint3 = greenBlob - blueBlob
 
     #Create axis perpendicular to rotation axis- Y
-    normToYAxis = [0, 0, -1]
+    normToYAxis = [0, 0, 1]
 
     dotProduct = normToYAxis[0] * joint3[0] + normToYAxis[2] * joint3[2]
 
@@ -364,13 +382,13 @@ class image_converter:
 
 
   def forwardKinematics(self,theta1,theta2,theta3,theta4):
-    position = self.homogenous_transformation_matrix[:1,-1].evalf(subs = {
+    position = self.homogenous_transformation_matrix[:-1,-1].evalf(subs = {
             self.t1 : theta1,
             self.t2 : theta2,
             self.t3 : theta3,
             self.t4 : theta4
         })
-    return position
+    return np.array(position).astype(np.float64)
 
   def calculatePIJacobian(self,image1, image2):
     ja1 = 0
@@ -391,7 +409,7 @@ class image_converter:
 
   def pd_control(self,image1,image2):
     K_p = 0.1 * np.eye(3)
-    K_d = np.eye(3)
+    K_d = 0 * np.eye(3)
     curr_time = np.array([rospy.get_time()])
     dt = curr_time - self.time_previous_step
     self.time_previous_step = curr_time
@@ -404,9 +422,7 @@ class image_converter:
     J_inv = self.calculatePIJacobian(image1,image2)
     gains = np.dot(K_p, self.e.T) + np.dot(K_d, self.de.T)
     qdot = np.dot(J_inv, gains)
-    print("J^-1", J_inv.shape)
-    print("gains", gains.shape)
-    print("qdot", qdot.shape)
+    print(q)
     qnew = q + (qdot * dt)
     return qnew
 
@@ -442,10 +458,10 @@ class image_converter:
     # Set movement of joint values according to sinusoidal signals and publish the movement values
     # NOTE: All joints work - record for minimum 5 seconds only, more than 15 will be off
     
-    # joint2Value = Float64()
+    joint2Value = Float64()
     # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    # #joint2Value.data = (np.pi/5)
-    # self.joint2_pub.publish(joint2Value)
+    joint2Value.data = (np.pi/6)
+    self.joint2_pub.publish(joint2Value)
 
     # joint3Value = Float64()
     # joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
@@ -505,19 +521,28 @@ class image_converter:
     # except CvBridgeError as e:
     #   print(e)
 
-    new_joint_angles = self.pd_control(self.cv_image1, self.cv_image2)
-    self.joint1=Float64()
-    self.joint1.data= new_joint_angles[0]
-    self.joint2=Float64()
-    self.joint2.data= new_joint_angles[1]
-    self.joint3=Float64()
-    self.joint3.data= new_joint_angles[2]
-    self.joint4=Float64()
-    self.joint4.data= new_joint_angles[2]
+    # new_joint_angles = self.pd_control(self.cv_image1, self.cv_image2)
+    # self.joint1=Float64()
+    # self.joint1.data= new_joint_angles[0]
+    # self.joint2=Float64()
+    # self.joint2.data= new_joint_angles[1]
+    # self.joint3=Float64()
+    # self.joint3.data= new_joint_angles[2]
+    # self.joint4=Float64()
+    # self.joint4.data= new_joint_angles[2]
 
-    self.joint2_pub.publish(self.joint2)
-    self.joint3_pub.publish(self.joint3)
-    self.joint4_pub.publish(self.joint4)
+    # self.joint2_pub.publish(self.joint2)
+    # self.joint3_pub.publish(self.joint3)
+    # self.joint4_pub.publish(self.joint4)
+
+    joint_angles = np.array([0.0, joint2Value.data, 0.0, 0.0])
+    fk = self.forwardKinematics(*joint_angles).flatten()
+    cv = self.p2mRed(self.cv_image1, self.cv_image2)
+    print("FK",fk)
+    print("CV",cv)
+    print("Error", np.linalg.norm(fk-cv))
+    print()
+
 
 
 
