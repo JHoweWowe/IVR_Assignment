@@ -450,25 +450,18 @@ class image_converter:
     ### NOTE: Each section should be run separately
 
     # # # SECTION 2.1:
-
-    # joint1Value = Float64()
-    # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    # joint1Value.data = (0.7)
-    # self.joint1_pub.publish(joint1Value)
     
+    # ACTUAL VALUES
     joint2Value = Float64()
     joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    #joint2Value.data = (0.1)
     self.joint2_pub.publish(joint2Value)
 
     joint3Value = Float64()
     joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
-    #joint3Value.data = (-0.1)
     self.joint3_pub.publish(joint3Value)
 
     joint4Value = Float64()
     joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
-    #joint4Value.data = (-0.7)
     self.joint4_pub.publish(joint4Value)
       
     # # # MY ESTIMATED VALUES
@@ -495,6 +488,7 @@ class image_converter:
     # print(abs(joint4Value.data - joint4EstimatedValue.data))
 
     ## SECTION 2.2:
+    # ESTIMATED VALUES
     targetXEstimatedValue = Float64()
     targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
     self.target_x_estimate_pub.publish(targetXEstimatedValue)
