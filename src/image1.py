@@ -53,6 +53,11 @@ class image_converter:
     # self.angle3_actual = rospy.Subscriber("/robot/joint3_position_controller/command",Float64,self.callback3)
     # self.angle4_actual = rospy.Subscriber("/robot/joint4_position_controller/command",Float64,self.callback3)
 
+    # SECTION 3.2: Publish estimated end effector position using inverse kinematics
+    self.end_effector_x_estimated_pub = rospy.Publisher("/robot/end_effector_x_estimated",Float64,queue_size=10)
+    self.end_effector_y_estimated_pub = rospy.Publisher("/robot/end_effector_y_estimated",Float64,queue_size=10)
+    self.end_effector_z_estimated_pub = rospy.Publisher("/robot/end_effector_z_estimated",Float64,queue_size=10)
+
     joint1Value = Float64()
     joint1Value.data = 0.0
     self.joint1_pub.publish(joint1Value)
@@ -135,7 +140,7 @@ class image_converter:
     #print("Dimensions for red blob:")
     #print(np.array([cx,cy,cz]))
 
-    return np.array([cx,cy,cz], dtype= Float64)
+    return np.array([cx,cy,cz])
 
   def detect_blue(self, image1, image2):
     # Isolate blue color
@@ -169,7 +174,7 @@ class image_converter:
     #cv2.circle(image1,(cy,cz), 3, (255,255,255), -1)
     #cv2.circle(image2, (cx,cz), 3, (255,255,255), -1)
 
-    return np.array([cx,cy,cz],dtype=Float64)
+    return np.array([cx,cy,cz])
   
   def detect_green(self, image1, image2):
     # Isolate green color- threshold slightly differs!
@@ -188,9 +193,9 @@ class image_converter:
     green_mask_image2 = cv2.inRange(image2, (0,100,0), (40,255,40))
 
     # Currently problem with detecting moments centroid at green blob detection at camera 2
-    contours, hierarchy = cv2.findContours(green_mask_image2, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    #contours, _ = cv2.findContours(green_mask_image2, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    M_image2 = cv2.moments(contours[0])
+    M_image2 = cv2.moments(green_mask_image2)
     if (M_image2['m00'] != 0):
       cx = int(M_image2['m10']/M_image2['m00'])
       cz = int(M_image2['m01']/M_image2['m00'])
@@ -282,30 +287,6 @@ class image_converter:
     v = red - green
     return 3 * v/np.linalg.norm(v) + self.p2mGreen(image1, image2)
 
-  # Rotates link 2 based on X axis- use camera 1
-  def pixel2MeterForLink2(self, image1, image2):
-    joint2 = self.detect_blue(image1, image2)
-    joint3 = self.detect_green(image1, image2)
-    # Finds Pythagorean distance between two vectors
-    dist = np.linalg.norm(joint3 - joint2)
-    return 3.5 / dist
-
-  # Rotates link 3 based on Y axis- will need to implement camera 2
-  def pixel2MeterForLink3(self, image1, image2):
-    joint2 = self.detect_blue(image1, image2)
-    joint3 = self.detect_green(image1, image2)
-    # Finds Pythagorean distance between two vectors
-    dist = np.linalg.norm(joint3 - joint2)
-    return 3.5 / dist
-
-  # Rotates link 4 based on X axis- will need to use camera 1
-  def pixel2MeterForLink4(self, image1, image2):
-    joint3 = self.detect_green(image1, image2)
-    joint4 = self.detect_red(image1, image2)
-    # Pythagorean distance between two vectors
-    dist = np.linalg.norm(joint4 - joint3)
-    return 3 / dist
-
   # Joint angle 2
   def detect_joint_angle2(self, image1, image2):
 
@@ -341,7 +322,7 @@ class image_converter:
     joint3 = greenBlob - blueBlob
 
     #Create axis perpendicular to rotation axis- Y
-    normToYAxis = [0, 0, 1]
+    normToYAxis = [0, 0, -1]
 
     dotProduct = normToYAxis[0] * joint3[0] + normToYAxis[2] * joint3[2]
 
@@ -395,7 +376,6 @@ class image_converter:
     ja4 = self.detect_joint_angle4(image1, image2)
     return np.array([0.0,ja2,ja3,ja4])
 
-
   def forwardKinematics(self,theta1,theta2,theta3,theta4):
     position = self.homogenous_transformation_matrix[:-1,-1].evalf(subs = {
             self.t1 : theta1,
@@ -423,15 +403,15 @@ class image_converter:
     curr_time = np.array([rospy.get_time()])
     dt = curr_time - self.time_previous_step
     self.time_previous_step = curr_time
-    # end_effector_pos = self.p2mRed(image1, image2) * np.array([1,1,-1])
-    end_effector_pos = self.forwardKinematics(*self.joint_angles)
-    # desired_pos = self.detect_orange_sphere(image1,image2) * np.array([1,1,-1])
-    desired_pos = np.array([0.0,1.0,3.0])
+    end_effector_pos = self.p2mRed(image1, image2) * np.array([1,1,-1])
+    #end_effector_pos = self.forwardKinematics(*self.joint_angles)
+    desired_pos = self.detect_orange_sphere(image1,image2) * np.array([1,1,-1])
+    #desired_pos = np.array([0.0,1.0,3.0])
     self.error_d = ((desired_pos - end_effector_pos) - self.error)/dt
     # estimate error
     self.error = desired_pos-end_effector_pos
-    # q = self.estimateJointAngles(image1, image2) # estimate initial value of joint angles
-    q = self.joint_angles
+    q = self.estimateJointAngles(image1, image2) # estimate initial value of joint angles
+    #q = self.joint_angles
     J_inv = np.linalg.pinv(self.calculateJacobian(q))  # calculating the psudeo inverse of Jacobian
     dq_d =np.dot(J_inv, ( np.dot(K_d,self.error_d.transpose()) + np.dot(K_p,self.error.transpose()) ) )  # control input (angular velocity of joints)
     q_d = q + (dt * dq_d)  # control input (angular position of joints)
@@ -439,8 +419,6 @@ class image_converter:
     print(end_effector_pos)
     print(q_d)
     return q_d
-
-
 
 
   # Recieve data from camera 1, process it, and publish
@@ -469,45 +447,44 @@ class image_converter:
     except CvBridgeError as e:
       print(e)
 
-    # Set movement of joint values according to sinusoidal signals and publish the movement values
-    # NOTE: All joints work - record for minimum 5 seconds only, more than 15 will be off
-    
-    joint1Value = Float64()
+    ### NOTE: Each section should be run separately
+
+    # # # SECTION 2.1:
+
+    # joint1Value = Float64()
     # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    joint1Value.data = (0.7)
-    self.joint1_pub.publish(joint1Value)
+    # joint1Value.data = (0.7)
+    # self.joint1_pub.publish(joint1Value)
     
     joint2Value = Float64()
-    # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    joint2Value.data = (0.1)
+    joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
+    #joint2Value.data = (0.1)
     self.joint2_pub.publish(joint2Value)
 
     joint3Value = Float64()
-    # joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
-    joint3Value.data = (-0.1)
+    joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
+    #joint3Value.data = (-0.1)
     self.joint3_pub.publish(joint3Value)
 
     joint4Value = Float64()
-    # joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
-    joint4Value.data = (-0.7)
+    joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
+    #joint4Value.data = (-0.7)
     self.joint4_pub.publish(joint4Value)
-
-    # # # SECTION 2.1:
       
     # # # MY ESTIMATED VALUES
-    # joint2EstimatedValue = Float64()
-    # joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
-    # self.joint2_estimate_pub.publish(joint2EstimatedValue)
+    joint2EstimatedValue = Float64()
+    joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
+    self.joint2_estimate_pub.publish(joint2EstimatedValue)
 
-    # joint3EstimatedValue = Float64()
-    # joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
-    # self.joint3_estimate_pub.publish(joint3EstimatedValue)
+    joint3EstimatedValue = Float64()
+    joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
+    self.joint3_estimate_pub.publish(joint3EstimatedValue)
 
-    # joint4EstimatedValue = Float64()
-    # joint4EstimatedValue.data = self.detect_joint_angle4(self.cv_image1, self.cv_image2)
-    # self.joint4_estimate_pub.publish(joint4EstimatedValue)
+    joint4EstimatedValue = Float64()
+    joint4EstimatedValue.data = self.detect_joint_angle4(self.cv_image1, self.cv_image2)
+    self.joint4_estimate_pub.publish(joint4EstimatedValue)
 
-    # # # DIFFERENCES BETWEEN ACTUAL VALUES AND ESTIMATED VALUES
+    # # # DIFFERENCES BETWEEN ACTUAL VALUES AND ESTIMATED VALUES- uncomment for verification if needed
     # print("Differences between Joint2 actual and estimated joint angle values:")
     # print(abs(joint2Value.data - joint2EstimatedValue.data))
 
@@ -518,29 +495,28 @@ class image_converter:
     # print(abs(joint4Value.data - joint4EstimatedValue.data))
 
     ## SECTION 2.2:
-    # targetXEstimatedValue = Float64()
-    # targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
-    # self.target_x_estimate_pub.publish(targetXEstimatedValue)
-    # targetYEstimatedValue = Float64()
-    # targetYEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[1]
-    # self.target_y_estimate_pub.publish(targetYEstimatedValue)
-    # targetZEstimatedValue = Float64()
-    # targetZEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[2]
-    # self.target_z_estimate_pub.publish(targetZEstimatedValue)
-
-
+    targetXEstimatedValue = Float64()
+    targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
+    self.target_x_estimate_pub.publish(targetXEstimatedValue)
+    targetYEstimatedValue = Float64()
+    targetYEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[1]
+    self.target_y_estimate_pub.publish(targetYEstimatedValue)
+    targetZEstimatedValue = Float64()
+    targetZEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[2]
+    self.target_z_estimate_pub.publish(targetZEstimatedValue)
 
     # Display images
     # im1=cv2.imshow('window1', self.cv_image1)
     # im2=cv2.imshow('window2', self.cv_image2)
     # cv2.waitKey(1)
 
-    # Publish the results
-    # try: 
-    #   self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
-    # except CvBridgeError as e:
-    #   print(e)
+    #Publish the results
+    try: 
+      self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
+    except CvBridgeError as e:
+      print(e)
 
+    # SECTION 3.2
     # new_joint_angles = self.pd_control(self.cv_image1, self.cv_image2)
     # self.joint1=Float64()
     # self.joint1.data= new_joint_angles[0]
@@ -556,15 +532,17 @@ class image_converter:
     # self.joint3_pub.publish(self.joint3)
     # self.joint4_pub.publish(self.joint4)
 
-    joint_angles = np.array([joint1Value.data, joint2Value.data, joint3Value.data, joint4Value.data])
-    fk = self.forwardKinematics(*joint_angles).flatten()
-    cv = self.p2mRed(self.cv_image1, self.cv_image2)
-    print("FK",fk)
-    print("CV",cv)
-    print("Error", np.linalg.norm(fk-cv))
-    print()
+    # end_effector_x = Float64()
+    # end_effector_x.data = self.pd_control(self.cv_image1, self.cv_image2)[0]
+    # self.end_effector_x_estimated_pub.publish(end_effector_x)
 
+    # end_effector_y = Float64()
+    # end_effector_y.data = self.pd_control(self.cv_image1, self.cv_image2)[1]
+    # self.end_effector_y_estimated_pub.publish(end_effector_y)
 
+    # end_effector_z = Float64()
+    # end_effector_z.data = self.pd_control(self.cv_image1, self.cv_image2)[2]
+    # self.end_effector_z_estimated_pub.publish(end_effector_z)
 
 
 # call the class
