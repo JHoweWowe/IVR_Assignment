@@ -242,29 +242,22 @@ class image_converter:
     M_YZ = cv2.moments(sphere_YZ)
 
     # If moments cannot be detected properly, it would obtain centroid from previous estimates
-    last_cx = 0
-    last_cy = 0
-    last_cz = 0
 
     if (M_YZ['m00'] != 0):
       cy = int(M_YZ['m10']/M_YZ['m00'])
       cz = int(M_YZ['m01']/M_YZ['m00'])
-      last_cy = cy
-      last_cz = cz
     else:
-      cy = last_cy
-      cz = last_cz
+      cy = 0
+      cz = 0
 
     M_XZ = cv2.moments(sphere_XZ)
 
     if (M_XZ['m00'] != 0):
       cx = int(M_XZ['m10']/M_XZ['m00'])
       cz = int(M_XZ['m01']/M_XZ['m00']) 
-      last_cx = cx
-      last_cz = cz
     else:
-      cx = last_cx
-      cz = last_cz
+      cx = 0
+      cz = 0
 
     pos = np.array([cx,cy,-cz])
     pos = 6 * pos/np.linalg.norm(pos)
@@ -323,12 +316,12 @@ class image_converter:
     joint2 = greenBlob - blueBlob
 
     # Create an axis perpendicular to rotation axis- X
-    normToXAxis = [0, 0, 1]
+    normToXAxis = [0, 1, 0]
 
-    dotProduct = normToXAxis[1] * joint2[1]  + normToXAxis[2] * joint2[2]
+    dotProduct = normToXAxis[0] * joint2[0] + normToXAxis[1] * joint2[1]  + normToXAxis[2] * joint2[2]
 
-    normalizedVector1 = np.sqrt(normToXAxis[1]**2+normToXAxis[2]**2)
-    normalizedVector2 = np.sqrt(joint2[1]**2+joint2[2]**2) 
+    normalizedVector1 = np.sqrt(normToXAxis[0]**2+normToXAxis[1]**2+normToXAxis[2]**2)
+    normalizedVector2 = np.sqrt(joint2[0]**2+joint2[1]**2+joint2[2]**2) 
 
     x_angle = np.arccos(dotProduct / (normalizedVector1 * normalizedVector2))
 
@@ -499,15 +492,9 @@ class image_converter:
     # joint4Value.data = (1.3)
     # self.joint4_pub.publish(joint4Value)
 
-    # end_effector_cv = self.p2mRed(self.cv_image1, self.cv_image2)
-    # end_effector_fk = self.forwardKinematics(joint1Value.data,joint2Value.data,joint3Value.data,joint4Value.data)
-
-    # print("CV",end_effector_cv)
-    # print("FK",end_effector_fk)
-
-    # # SECTION 2.1:
+    # # # SECTION 2.1:
       
-    # # MY ESTIMATED VALUES
+    # # # MY ESTIMATED VALUES
     # joint2EstimatedValue = Float64()
     # joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
     # self.joint2_estimate_pub.publish(joint2EstimatedValue)
@@ -520,7 +507,7 @@ class image_converter:
     # joint4EstimatedValue.data = self.detect_joint_angle4(self.cv_image1, self.cv_image2)
     # self.joint4_estimate_pub.publish(joint4EstimatedValue)
 
-    # # DIFFERENCES BETWEEN ACTUAL VALUES AND ESTIMATED VALUES
+    # # # DIFFERENCES BETWEEN ACTUAL VALUES AND ESTIMATED VALUES
     # print("Differences between Joint2 actual and estimated joint angle values:")
     # print(abs(joint2Value.data - joint2EstimatedValue.data))
 
@@ -531,15 +518,15 @@ class image_converter:
     # print(abs(joint4Value.data - joint4EstimatedValue.data))
 
     ## SECTION 2.2:
-    # targetXEstimatedValue = Float64()
-    # targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
-    # self.target_x_estimate_pub.publish(targetXEstimatedValue)
-    # targetYEstimatedValue = Float64()
-    # targetYEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[1]
-    # self.target_y_estimate_pub.publish(targetYEstimatedValue)
-    # targetZEstimatedValue = Float64()
-    # targetZEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[2]
-    # self.target_z_estimate_pub.publish(targetZEstimatedValue)
+    targetXEstimatedValue = Float64()
+    targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
+    self.target_x_estimate_pub.publish(targetXEstimatedValue)
+    targetYEstimatedValue = Float64()
+    targetYEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[1]
+    self.target_y_estimate_pub.publish(targetYEstimatedValue)
+    targetZEstimatedValue = Float64()
+    targetZEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[2]
+    self.target_z_estimate_pub.publish(targetZEstimatedValue)
 
 
 
