@@ -31,6 +31,7 @@ class image_converter:
     self.bridge = CvBridge()
 
     # ACTUAL movements: Publish actual joints states w.r.t sinusoidal signals
+    self.joint1_pub = rospy.Publisher("/robot/joint1_position_controller/command",Float64,queue_size=10)
     self.joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command",Float64,queue_size=10)
     self.joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command",Float64,queue_size=10)
     self.joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command",Float64,queue_size=10)
@@ -87,10 +88,12 @@ class image_converter:
     ])
 
     self.homogenous_transformation_matrix = A10*A21*A32*A43
-    self.e = np.zeros((3,1), dtype='float64')  
-    self.de = np.zeros((3,1), dtype='float64')
+    self.error = np.array([0.0,0.0,0.0], dtype='float64')  
+    self.error_d = np.array([0.0,0.0,0.0], dtype='float64') 
 
     self.time_previous_step = np.array([rospy.get_time()], dtype='float64')
+
+    self.joint_angles = np.array([0.0,0.0,0.0,0.0])
   
   def detect_red(self, image1, image2):
     red_mask_image1 = cv2.inRange(image1, (0,0,100), (35,35,255))
@@ -247,7 +250,10 @@ class image_converter:
       cx = last_cx
       cz = last_cz
 
-    return np.array([cx,cy,-cz])
+    pos = np.array([cx,cy,-cz])
+    pos = 6 * pos/np.linalg.norm(pos)
+
+    return pos
 
   def p2mBlue(self,image1,image2):
     blue = self.detect_blue(image1, image2)
@@ -388,15 +394,11 @@ class image_converter:
             self.t3 : theta3,
             self.t4 : theta4
         })
-    return np.array(position).astype(np.float64)
+    return np.array(position).astype(np.float64).flatten()
 
-  def calculatePIJacobian(self,image1, image2):
-    ja1 = 0
-    ja2 = self.detect_joint_angle2(image1, image2)
-    ja3 = self.detect_joint_angle3(image1, image2)
-    ja4 = self.detect_joint_angle4(image1, image2)
+  def calculateJacobian(self,q):
+    [ja1, ja2, ja3, ja4] = q
     jacobian = self.homogenous_transformation_matrix[:-1,-1].jacobian(self.joint_angle_vars)
-    print(jacobian.shape)
     jacobian = jacobian.evalf(subs = {
       self.t1 : ja1,
       self.t2 : ja2,
@@ -404,27 +406,28 @@ class image_converter:
       self.t4 : ja4
     })
     J = np.array(jacobian).astype(np.float64)
-    J_inv = np.linalg.pinv(J)
-    return J_inv
+    return J
 
   def pd_control(self,image1,image2):
-    K_p = 0.1 * np.eye(3)
-    K_d = 0 * np.eye(3)
+    K_p = 3 * np.eye(3)
+    K_d = 0.1 * np.eye(3)
     curr_time = np.array([rospy.get_time()])
     dt = curr_time - self.time_previous_step
     self.time_previous_step = curr_time
-    end_effector_pos = self.detect_red(image1, image2)
+    # end_effector_pos = self.p2mRed(image1, image2)
+    end_effector_pos = self.forwardKinematics(*self.joint_angles)
     # desired_pos = self.detect_orange_sphere(image1,image2)
-    desired_pos = np.array([0.0,0.0,0.0])
-    self.de = ((desired_pos - end_effector_pos) - self.e) / dt
-    self.e = desired_pos - end_effector_pos
-    q = self.estimateJointAngles(image1,image2)
-    J_inv = self.calculatePIJacobian(image1,image2)
-    gains = np.dot(K_p, self.e.T) + np.dot(K_d, self.de.T)
-    qdot = np.dot(J_inv, gains)
-    print(q)
-    qnew = q + (qdot * dt)
-    return qnew
+    desired_pos = np.array([0.0,1,3.0])
+    self.error_d = ((desired_pos - end_effector_pos) - self.error)/dt
+    # estimate error
+    self.error = desired_pos-end_effector_pos
+    q = self.estimateJointAngles(image1, image2) # estimate initial value of joint angles
+    # q = self.joint_angles
+    J_inv = np.linalg.pinv(self.calculateJacobian(q))  # calculating the psudeo inverse of Jacobian
+    dq_d =np.dot(J_inv, ( np.dot(K_d,self.error_d.transpose()) + np.dot(K_p,self.error.transpose()) ) )  # control input (angular velocity of joints)
+    q_d = q + (dt * dq_d)  # control input (angular position of joints)
+    self.joint_angles = q_d
+    return q_d
 
 
 
@@ -458,10 +461,10 @@ class image_converter:
     # Set movement of joint values according to sinusoidal signals and publish the movement values
     # NOTE: All joints work - record for minimum 5 seconds only, more than 15 will be off
     
-    joint2Value = Float64()
+    # joint2Value = Float64()
     # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    joint2Value.data = (np.pi/6)
-    self.joint2_pub.publish(joint2Value)
+    # # joint2Value.data = (np.pi/6)
+    # self.joint2_pub.publish(joint2Value)
 
     # joint3Value = Float64()
     # joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
@@ -472,9 +475,9 @@ class image_converter:
     # joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
     # self.joint4_pub.publish(joint4Value)
 
-    ## SECTION 2.1:
+    # # SECTION 2.1:
       
-    # MY ESTIMATED VALUES
+    # # MY ESTIMATED VALUES
     # joint2EstimatedValue = Float64()
     # joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
     # self.joint2_estimate_pub.publish(joint2EstimatedValue)
@@ -487,15 +490,15 @@ class image_converter:
     # joint4EstimatedValue.data = self.detect_joint_angle4(self.cv_image1, self.cv_image2)
     # self.joint4_estimate_pub.publish(joint4EstimatedValue)
 
-    # DIFFERENCES BETWEEN ACTUAL VALUES AND ESTIMATED VALUES
-    #print("Differences between Joint2 actual and estimated joint angle values:")
-    #print(abs(joint2Value.data - joint2EstimatedValue.data))
+    # # DIFFERENCES BETWEEN ACTUAL VALUES AND ESTIMATED VALUES
+    # print("Differences between Joint2 actual and estimated joint angle values:")
+    # print(abs(joint2Value.data - joint2EstimatedValue.data))
 
     # print("Differences between Joint3 actual and estimated joint angle values:")
     # print(abs(joint3Value.data - joint3EstimatedValue.data))
 
-    #print("Differences between Joint4 actual and estimated joint angle values:")
-    #print(abs(joint4Value.data - joint4EstimatedValue.data))
+    # print("Differences between Joint4 actual and estimated joint angle values:")
+    # print(abs(joint4Value.data - joint4EstimatedValue.data))
 
     ## SECTION 2.2:
     # targetXEstimatedValue = Float64()
@@ -521,27 +524,28 @@ class image_converter:
     # except CvBridgeError as e:
     #   print(e)
 
-    # new_joint_angles = self.pd_control(self.cv_image1, self.cv_image2)
-    # self.joint1=Float64()
-    # self.joint1.data= new_joint_angles[0]
-    # self.joint2=Float64()
-    # self.joint2.data= new_joint_angles[1]
-    # self.joint3=Float64()
-    # self.joint3.data= new_joint_angles[2]
-    # self.joint4=Float64()
-    # self.joint4.data= new_joint_angles[2]
+    new_joint_angles = self.pd_control(self.cv_image1, self.cv_image2)
+    self.joint1=Float64()
+    self.joint1.data= new_joint_angles[0]
+    self.joint2=Float64()
+    self.joint2.data= new_joint_angles[1]
+    self.joint3=Float64()
+    self.joint3.data= new_joint_angles[2]
+    self.joint4=Float64()
+    self.joint4.data= new_joint_angles[2]
 
-    # self.joint2_pub.publish(self.joint2)
-    # self.joint3_pub.publish(self.joint3)
-    # self.joint4_pub.publish(self.joint4)
+    self.joint1_pub.publish(self.joint1)
+    self.joint2_pub.publish(self.joint2)
+    self.joint3_pub.publish(self.joint3)
+    self.joint4_pub.publish(self.joint4)
 
-    joint_angles = np.array([0.0, joint2Value.data, 0.0, 0.0])
-    fk = self.forwardKinematics(*joint_angles).flatten()
-    cv = self.p2mRed(self.cv_image1, self.cv_image2)
-    print("FK",fk)
-    print("CV",cv)
-    print("Error", np.linalg.norm(fk-cv))
-    print()
+    # joint_angles = np.array([0.0, joint2Value.data, 0.0, 0.0])
+    # fk = self.forwardKinematics(*joint_angles).flatten()
+    # cv = self.p2mRed(self.cv_image1, self.cv_image2)
+    # print("FK",fk)
+    # print("CV",cv)
+    # print("Error", np.linalg.norm(fk-cv))
+    # print()
 
 
 
