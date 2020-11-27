@@ -53,6 +53,22 @@ class image_converter:
     # self.angle3_actual = rospy.Subscriber("/robot/joint3_position_controller/command",Float64,self.callback3)
     # self.angle4_actual = rospy.Subscriber("/robot/joint4_position_controller/command",Float64,self.callback3)
 
+    joint1Value = Float64()
+    joint1Value.data = 0.0
+    self.joint1_pub.publish(joint1Value)
+
+    joint2Value = Float64()
+    joint2Value.data = 0.0
+    self.joint2_pub.publish(joint2Value)
+
+    joint3Value = Float64()
+    joint3Value.data = 0.0
+    self.joint3_pub.publish(joint3Value)
+
+    joint4Value = Float64()
+    joint4Value.data = 0.0
+    self.joint4_pub.publish(joint4Value)
+
 
     # KINEMATICS
 
@@ -417,16 +433,18 @@ class image_converter:
     # end_effector_pos = self.p2mRed(image1, image2)
     end_effector_pos = self.forwardKinematics(*self.joint_angles)
     # desired_pos = self.detect_orange_sphere(image1,image2)
-    desired_pos = np.array([0.0,1,3.0])
+    desired_pos = np.array([0.0,1.0,3.0])
     self.error_d = ((desired_pos - end_effector_pos) - self.error)/dt
     # estimate error
     self.error = desired_pos-end_effector_pos
-    q = self.estimateJointAngles(image1, image2) # estimate initial value of joint angles
-    # q = self.joint_angles
+    # q = self.estimateJointAngles(image1, image2) # estimate initial value of joint angles
+    q = self.joint_angles
     J_inv = np.linalg.pinv(self.calculateJacobian(q))  # calculating the psudeo inverse of Jacobian
     dq_d =np.dot(J_inv, ( np.dot(K_d,self.error_d.transpose()) + np.dot(K_p,self.error.transpose()) ) )  # control input (angular velocity of joints)
     q_d = q + (dt * dq_d)  # control input (angular position of joints)
     self.joint_angles = q_d
+    print(end_effector_pos)
+    print(q_d)
     return q_d
 
 
@@ -461,19 +479,31 @@ class image_converter:
     # Set movement of joint values according to sinusoidal signals and publish the movement values
     # NOTE: All joints work - record for minimum 5 seconds only, more than 15 will be off
     
+    # joint1Value = Float64()
+    # # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
+    # joint1Value.data = (3.14)
+    # self.joint1_pub.publish(joint1Value)
+    
     # joint2Value = Float64()
-    # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    # # joint2Value.data = (np.pi/6)
+    # # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
+    # joint2Value.data = (0.1)
     # self.joint2_pub.publish(joint2Value)
 
     # joint3Value = Float64()
-    # joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
-    # #joint3Value.data = (np.pi/3)
+    # # joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
+    # joint3Value.data = (-1.2)
     # self.joint3_pub.publish(joint3Value)
 
     # joint4Value = Float64()
-    # joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
+    # # joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
+    # joint4Value.data = (1.3)
     # self.joint4_pub.publish(joint4Value)
+
+    # end_effector_cv = self.p2mRed(self.cv_image1, self.cv_image2)
+    # end_effector_fk = self.forwardKinematics(joint1Value.data,joint2Value.data,joint3Value.data,joint4Value.data)
+
+    # print("CV",end_effector_cv)
+    # print("FK",end_effector_fk)
 
     # # SECTION 2.1:
       
@@ -532,7 +562,7 @@ class image_converter:
     self.joint3=Float64()
     self.joint3.data= new_joint_angles[2]
     self.joint4=Float64()
-    self.joint4.data= new_joint_angles[2]
+    self.joint4.data= new_joint_angles[3]
 
     self.joint1_pub.publish(self.joint1)
     self.joint2_pub.publish(self.joint2)
