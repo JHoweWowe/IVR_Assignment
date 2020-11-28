@@ -53,8 +53,8 @@ class image_converter:
     self.target_y_estimate_pub = rospy.Publisher("/target/target_y_estimated_position",Float64,queue_size=10)
     self.target_z_estimate_pub = rospy.Publisher("/target/target_z_estimated_position",Float64,queue_size=10)
 
-    # SECTION 3.2: Publish end effector position calculated using inverse kinematics
 
+    # SECTION 3.2: Publish end effector calculated position using inverse kinematics
     self.end_effector_x_pub = rospy.Publisher("/robot/end_effector_x_estimated",Float64,queue_size=10)
     self.end_effector_y_pub = rospy.Publisher("/robot/end_effector_y_estimated",Float64,queue_size=10)
     self.end_effector_z_pub = rospy.Publisher("/robot/end_effector_z_estimated",Float64,queue_size=10)
@@ -362,7 +362,6 @@ class image_converter:
     ja4 = self.detect_joint_angle4(image1, image2)
     return np.array([0.0,ja2,ja3,ja4])
 
-
   def forwardKinematics(self,theta1,theta2,theta3,theta4):
     position = self.homogenous_transformation_matrix[:-1,-1].evalf(subs = {
             self.t1 : theta1,
@@ -390,7 +389,7 @@ class image_converter:
     curr_time = np.array([rospy.get_time()])
     dt = curr_time - self.time_previous_step
     self.time_previous_step = curr_time
-    # end_effector_pos = self.p2mRed(image1, image2) * np.array([1,1,-1])
+    # end_effector_pos = self.p2mRed(image1, image2) * np.array([1,1,-1]) <- This works perfectly as well as the forward kinematics!
     q = self.joint_angles
     end_effector_pos = self.forwardKinematics(*self.joint_angles)
     xe = Float64(data = end_effector_pos[0])
@@ -410,8 +409,6 @@ class image_converter:
     dq_d =np.dot(J_inv, ( np.dot(K_d,self.error_d.transpose()) + np.dot(K_p,self.error.transpose()) ) )  # control input (angular velocity of joints)
     q_d = q + (dt * dq_d)  # control input (angular position of joints)
     return q_d
-
-
 
 
   # Recieve data from camera 1, process it, and publish
@@ -440,41 +437,37 @@ class image_converter:
     except CvBridgeError as e:
       print(e)
 
-    # Set movement of joint values according to sinusoidal signals and publish the movement values
-    # NOTE: All joints work - record for minimum 5 seconds only, more than 15 will be off
-    
-    # joint2Value = Float64()
-    # joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
-    # # joint2Value.data = (np.pi/6)
-    # self.joint2_pub.publish(joint2Value)
-    # print(self.joint_angles)
-
-    # joint3Value = Float64()
-    # joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
-    # #joint3Value.data = (np.pi/3)
-    # self.joint3_pub.publish(joint3Value)
-
-    # joint4Value = Float64()
-    # joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
-    # self.joint4_pub.publish(joint4Value)
-    # # print(self.forwardKinematics(*self.joint_angles))
+    ### NOTE: Each section should be run separately
 
     # # # SECTION 2.1:
+    
+    # ACTUAL VALUES
+    joint2Value = Float64()
+    joint2Value.data = ((np.pi/2) * np.sin((np.pi/15) * rospy.get_time()))
+    self.joint2_pub.publish(joint2Value)
+
+    joint3Value = Float64()
+    joint3Value.data = ((np.pi/2) * np.sin((np.pi/18) * rospy.get_time()))
+    self.joint3_pub.publish(joint3Value)
+
+    joint4Value = Float64()
+    joint4Value.data = ((np.pi/2) * np.sin((np.pi/20) * rospy.get_time()))
+    self.joint4_pub.publish(joint4Value)
       
     # # # MY ESTIMATED VALUES
-    # joint2EstimatedValue = Float64()
-    # joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
-    # self.joint2_estimate_pub.publish(joint2EstimatedValue)
+    joint2EstimatedValue = Float64()
+    joint2EstimatedValue.data = self.detect_joint_angle2(self.cv_image1, self.cv_image2)
+    self.joint2_estimate_pub.publish(joint2EstimatedValue)
 
-    # joint3EstimatedValue = Float64()
-    # joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
-    # self.joint3_estimate_pub.publish(joint3EstimatedValue)
+    joint3EstimatedValue = Float64()
+    joint3EstimatedValue.data = self.detect_joint_angle3(self.cv_image1, self.cv_image2)
+    self.joint3_estimate_pub.publish(joint3EstimatedValue)
 
-    # joint4EstimatedValue = Float64()
-    # joint4EstimatedValue.data = self.detect_joint_angle4(self.cv_image1, self.cv_image2)
-    # self.joint4_estimate_pub.publish(joint4EstimatedValue)
+    joint4EstimatedValue = Float64()
+    joint4EstimatedValue.data = self.detect_joint_angle4(self.cv_image1, self.cv_image2)
+    self.joint4_estimate_pub.publish(joint4EstimatedValue)
 
-    # # # DIFFERENCES BETWEEN ACTUAL VALUES AND ESTIMATED VALUES
+    # # # DIFFERENCES BETWEEN ACTUAL VALUES AND ESTIMATED VALUES- uncomment for verification if needed
     # print("Differences between Joint2 actual and estimated joint angle values:")
     # print(abs(joint2Value.data - joint2EstimatedValue.data))
 
@@ -485,28 +478,29 @@ class image_converter:
     # print(abs(joint4Value.data - joint4EstimatedValue.data))
 
     ## SECTION 2.2:
-    # targetXEstimatedValue = Float64()
-    # targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
-    # self.target_x_estimate_pub.publish(targetXEstimatedValue)
-    # targetYEstimatedValue = Float64()
-    # targetYEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[1]
-    # self.target_y_estimate_pub.publish(targetYEstimatedValue)
-    # targetZEstimatedValue = Float64()
-    # targetZEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[2]
-    # self.target_z_estimate_pub.publish(targetZEstimatedValue)
-
+    # ESTIMATED VALUES
+    targetXEstimatedValue = Float64()
+    targetXEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[0]
+    self.target_x_estimate_pub.publish(targetXEstimatedValue)
+    targetYEstimatedValue = Float64()
+    targetYEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[1]
+    self.target_y_estimate_pub.publish(targetYEstimatedValue)
+    targetZEstimatedValue = Float64()
+    targetZEstimatedValue.data = self.detect_orange_sphere(self.cv_image1, self.cv_image2)[2]
+    self.target_z_estimate_pub.publish(targetZEstimatedValue)
 
     # Display images
     # im1=cv2.imshow('window1', self.cv_image1)
     # im2=cv2.imshow('window2', self.cv_image2)
     # cv2.waitKey(1)
 
-    # Publish the results
-    # try: 
-    #   self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
-    # except CvBridgeError as e:
-    #   print(e)
+    #Publish the results
+    try: 
+      self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
+    except CvBridgeError as e:
+      print(e)
 
+    # SECTION 3.2 ***************** Uncomment to run
     # new_joint_angles = self.pd_control(self.cv_image1, self.cv_image2)
     # self.joint1=Float64()
     # self.joint1.data= new_joint_angles[0]
@@ -522,6 +516,7 @@ class image_converter:
     # self.joint3_pub.publish(self.joint3)
     # self.joint4_pub.publish(self.joint4)
 
+    # SECTION 3.1 *****************
     # joint_angles = np.array([0.0, joint2Value.data, 0.0, 0.0])
     # fk = self.forwardKinematics(*joint_angles).flatten()
     # cv = self.p2mRed(self.cv_image1, self.cv_image2)
@@ -541,7 +536,6 @@ class image_converter:
 
   def targetz(self,x):
     self.target[2] = x.data
-
 
 
 
